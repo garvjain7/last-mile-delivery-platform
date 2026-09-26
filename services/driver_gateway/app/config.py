@@ -6,8 +6,7 @@ from pydantic import BaseModel
 
 class DriverGatewayConfig(BaseModel):
     """Configuration properties for Driver Gateway service. Completely decoupled from Postgres."""
-    redis_host: str = os.getenv("REDIS_HOST", "localhost")
-    redis_port: int = int(os.getenv("REDIS_PORT", "6379"))
+    redis_url: str = os.getenv("REDIS_URL", "redis://localhost:6379")
     minio_endpoint: str = os.getenv("MINIO_ENDPOINT", "localhost:9000")
     minio_access_key: str = os.getenv("MINIO_ROOT_USER", "minioadmin")
     minio_secret_key: str = os.getenv("MINIO_ROOT_PASSWORD", "minioadmin")

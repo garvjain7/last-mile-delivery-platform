@@ -7,7 +7,6 @@ last-mile-platform/
 ├── .env.example                               # Environment variables template
 ├── .gitignore                                  # Git ignore rules for Python, Docker, IDEs
 ├── AGENTS.md                                   # Enforced repository invariants and guardrails
-├── CURRENT_STATE.md                            # Project state tracking document
 ├── README.md                                   # Root readme document
 ├── requirements.txt                            # Root dependencies consolidating all microservice requirements
 ├── setup_windows.ps1                           # One-click Windows PowerShell environment setup script

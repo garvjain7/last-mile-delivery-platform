@@ -11,12 +11,7 @@ class VROOMClient:
 
     def __init__(self):
         self.base_url = config.vroom_url
-        self.timeout = httpx.Timeout(
-            connect=config.vroom_connect_timeout,
-            read=config.vroom_read_timeout,
-            write=config.vroom_write_timeout,
-            pool=config.vroom_connect_timeout
-        )
+        self.timeout = httpx.Timeout(connect=3.0, read=15.0, write=5.0, pool=5.0)
 
     async def solve_cvrptw(self, problem_payload: Dict[str, Any]) -> Dict[str, Any]:
         """

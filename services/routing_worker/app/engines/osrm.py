@@ -10,12 +10,7 @@ class OSRMClient:
 
     def __init__(self):
         self.base_url = config.osrm_url
-        self.timeout = httpx.Timeout(
-            connect=config.osrm_connect_timeout,
-            read=config.osrm_read_timeout,
-            write=config.osrm_write_timeout,
-            pool=config.osrm_connect_timeout
-        )
+        self.timeout = httpx.Timeout(connect=3.0, read=10.0, write=5.0, pool=5.0)
 
     async def get_table_matrix(self, coordinates: List[Tuple[float, float]]) -> Dict[str, Any]:
         """

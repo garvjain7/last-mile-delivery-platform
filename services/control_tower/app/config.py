@@ -6,7 +6,6 @@ from pydantic import BaseModel
 
 class ControlTowerConfig(BaseModel):
     """Configuration properties for Control Tower service. No database configuration."""
-    redis_host: str = os.getenv("REDIS_HOST", "localhost")
-    redis_port: int = int(os.getenv("REDIS_PORT", "6379"))
+    redis_url: str = os.getenv("REDIS_URL", "redis://localhost:6379")
 
 config = ControlTowerConfig()

@@ -28,8 +28,8 @@ The codebase is built as a **modular monolith** — a single unified repository 
 │           ▲                                             │                │
 │           │                                             ▼                │
 │   ┌──────────────┐        WebSockets        ┌────────────────────────┐   │
-│   │Control Tower │ ◄─────────────────────── │      Render Redis      │   │
-│   │ (Dashboard)  │                          │  (Streams + Hot State) │   │
+│   │Control Tower │ ◄─────────────────────── │   Render Key-Value     │   │
+│   │ (Dashboard)  │                          │(Valkey 8 / Redis Stream│   │
 │   └──────────────┘                          └────────────────────────┘   │
 └──────────────────────────────────────────────────────────────────────────┘
 ```
@@ -48,7 +48,7 @@ The codebase is built as a **modular monolith** — a single unified repository 
 
 - **Backend Framework**: Python 3.11 + FastAPI (All async endpoints & consumer loops)
 - **Database**: PostgreSQL 15 + PostGIS 3.3 (Hosted on **Neon DB**)
-- **Event Backbone & Hot State**: Redis Streams & Redis Hashes (Hosted on **Render Redis**)
+- **Event Backbone & Hot State**: Redis Streams & Redis Hashes (Compatible with **Render Key-Value Valkey 8** & Redis 6/7)
 - **Routing & Solvers**: OSRM (Travel cost matrices) & VROOM (CVRPTW solver)
 - **Geocoding**: Nominatim
 - **Object Storage**: MinIO (S3-compatible POD photo storage)
