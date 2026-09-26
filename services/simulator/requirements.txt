@@ -1,0 +1,5 @@
+# Simulator dependencies pinned per architecture.md specification.
+# Black-box external client tester — HTTP client dependencies only.
+
+httpx==0.27.0
+pydantic==2.6.4

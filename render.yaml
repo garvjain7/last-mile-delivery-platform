@@ -1,0 +1,71 @@
+# Render Infrastructure-as-Code Blueprint definition.
+# Deploys platform web services, background workers, and connects Neon DB & Render Redis.
+
+services:
+  - type: web
+    name: core-api
+    env: python
+    buildCommand: pip install -r services/core_api/requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    rootDir: services/core_api
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: NOMINATIM_URL
+        sync: false
+
+  - type: worker
+    name: routing-worker
+    env: python
+    buildCommand: pip install -r services/routing_worker/requirements.txt
+    startCommand: python -m app.main
+    rootDir: services/routing_worker
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: OSRM_URL
+        sync: false
+      - key: VROOM_URL
+        sync: false
+
+  - type: web
+    name: control-tower
+    env: python
+    buildCommand: pip install -r services/control_tower/requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    rootDir: services/control_tower
+    envVars:
+      - key: REDIS_URL
+        sync: false
+
+  - type: web
+    name: driver-gateway
+    env: python
+    buildCommand: pip install -r services/driver_gateway/requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    rootDir: services/driver_gateway
+    envVars:
+      - key: REDIS_URL
+        sync: false
+      - key: JWT_SECRET_KEY
+        sync: false
+      - key: JWT_ALGORITHM
+        value: HS256
+      - key: MINIO_ENDPOINT
+        sync: false
+
+  - type: worker
+    name: simulator
+    env: python
+    buildCommand: pip install -r services/simulator/requirements.txt
+    startCommand: python -m app.main
+    rootDir: services/simulator
+    envVars:
+      - key: CORE_API_URL
+        sync: false
+      - key: DRIVER_GATEWAY_URL
+        sync: false

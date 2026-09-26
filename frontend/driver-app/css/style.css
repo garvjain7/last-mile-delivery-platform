@@ -1,0 +1,33 @@
+/* Stylesheet for driver mobile PWA execution application. */
+/* Touch-friendly layout for driver stop list, navigation handoff, and photo capture. */
+
+body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background-color: #f1f5f9;
+    color: #0f172a;
+}
+
+header {
+    background-color: #2563eb;
+    color: white;
+    padding: 1rem;
+    text-align: center;
+}
+
+main {
+    padding: 1rem;
+}
+
+#stops-list {
+    list-style: none;
+    padding: 0;
+}
+
+.stop-card {
+    background: white;
+    padding: 1rem;
+    margin-bottom: 0.75rem;
+    border-radius: 8px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
