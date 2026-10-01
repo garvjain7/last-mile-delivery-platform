@@ -4,9 +4,10 @@ Last-Mile Delivery Orchestration Platform. Companion to `docs/PRD.md` and `docs/
 
 ## 0. Zero Guesswork — Read This First
 
-- If a field, type, constraint, or requirement is missing, ambiguous, or contradicted between `docs/PRD.md`, `docs/architecture.md`, `db/migrations/`, and `db-models/`, **do not infer, default, or pick a plausible-looking value.** Stop and ask, or write `# TODO: <exact open question>` and move on — never silently implement a guess and let it look finished. A comment noting the "correct" approach while the code does something else is worse than an empty stub.
-- **`db/migrations/` and `db-models/` are a draft, not a finalized schema**, until `docs/architecture.md` explicitly says otherwise. Do not treat table/column shapes as fixed. If a task depends on a schema detail that looks unconfirmed, flag it rather than building on top of it as if it were settled.
-- This rule exists because it was violated once already: an agent silently substituted plain `String` columns for spec'd PostGIS `Geography` types rather than flagging the gap, because the source doc it was working from (`PRD.md`'s shorthand domain model) didn't fully specify them. Don't repeat that pattern — when a doc gives a shorthand/summary, that is itself a signal to check the fuller source (referenced schema file, architecture.md) before implementing, not to implement the summary literally.
+- If a field, type, constraint, or requirement is missing, ambiguous, or contradicted between `docs/PRD.md`, `docs/architecture.md`, and `schema.sql`, **do not infer, default, or pick a plausible-looking value.** Stop and ask, or write `# TODO: <exact open question>` and move on — never silently implement a guess and let it look finished. A comment noting the "correct" approach while the code does something else is worse than an empty stub.
+- **`schema.sql` (root of the repository) is the single authoritative source of truth for every Postgres table, column type, constraint, index, and enum.** When it exists, it supersedes `db_models/models.py`, `docs/PRD.md` shorthand, and any other description. `db_models/models.py` must be kept in sync with `schema.sql` — if they disagree, `schema.sql` wins and `db_models/` must be updated to match, never the other way around.
+- **`db_models/models.py` is currently a draft placeholder** — its column types (plain `String` for PostGIS geography fields, plain `String` for status enums) are known to be wrong. Do not treat its current shape as authoritative. Once `schema.sql` exists, all schema work derives from it.
+- This rule exists because it was violated once already: an agent silently substituted plain `String` columns for spec'd PostGIS `Geography` types rather than flagging the gap, because the source doc it was working from (`PRD.md`'s shorthand domain model) didn't fully specify them. Don't repeat that pattern — when a doc gives a shorthand/summary, that is itself a signal to check the fuller source (`schema.sql`) before implementing, not to implement the summary literally.
 
 ## 1. System Topology & Process Layout
 
@@ -29,17 +30,17 @@ Last-Mile Delivery Orchestration Platform. Companion to `docs/PRD.md` and `docs/
 
 ## 3. Directory Map
 
+- `schema.sql` — root of the repository. The single authoritative DDL for every Postgres table, type, index, and enum. Read this before touching any schema-adjacent code.
 - `streaming/schemas/` — strict event envelope definitions per stream.
 - `streaming/client.py` — the only place a Redis connection pool is constructed.
-- `db-models/` — SQLAlchemy models. `db/migrations/` is the only way schema changes reach Postgres — models and migrations must move together in the same PR.
-- `services/core-api/app/orders/` — order ingestion + facility assignment.
-- `services/core-api/app/staff/` — Admin scope, bounded per Section 2. Not a place to grow features.
-- `services/routing-worker/app/consumers/` — both consumer-group loops (routing + terminal-event) and the `XAUTOCLAIM` recovery routine.
-- `services/routing-worker/app/engines/` — OSRM/VROOM HTTP clients.
-- `services/control-tower/app/fleet_state/` — Redis Hash read/write logic.
-- `services/control-tower/app/websockets/` — connection management, delta broadcast.
-- `services/driver-gateway/app/auth/`, `.../ingestion/`, `.../storage/` — no other subfolders; no database utilities of any kind land here.
-- `db/migrations/` — numbered, ordered, append-only. Never edit a merged migration.
+- `db_models/` — SQLAlchemy ORM models. Must mirror `schema.sql` exactly — `schema.sql` wins on any conflict. Imported only by `core_api` and `routing_worker`.
+- `services/core_api/app/orders/` — order ingestion + facility assignment.
+- `services/core_api/app/staff/` — Admin scope, bounded per Section 2. Not a place to grow features.
+- `services/routing_worker/app/consumers/` — both consumer-group loops (routing + terminal-event) and the `XAUTOCLAIM` recovery routine.
+- `services/routing_worker/app/engines/` — OSRM/VROOM HTTP clients.
+- `services/control_tower/app/fleet_state/` — Redis Hash read/write logic.
+- `services/control_tower/app/websockets/` — connection management, delta broadcast.
+- `services/driver_gateway/app/auth/`, `.../ingestion/`, `.../storage/` — no other subfolders; no database utilities of any kind land here.
 
 ## 4. Async & Stream Concurrency Rules
 
@@ -58,8 +59,8 @@ Last-Mile Delivery Orchestration Platform. Companion to `docs/PRD.md` and `docs/
 
 ## 6. Schema & Contract Discipline
 
-- No database structure changes without a numbered file under `db/migrations/`, paired with the corresponding `db-models/` change in the same PR.
-- Field names are identical, verbatim, across every layer: Postgres column, `db-models/` field, Redis stream field, Simulator payload, frontend JS variable. `pickup_facility_id` stays `pickup_facility_id` everywhere — no camelCase on the frontend, no abbreviating in a stream schema.
+- **`schema.sql` (root) is the schema contract.** Any change to table shape, column type, index, or enum starts in `schema.sql`. The corresponding `db_models/` update must land in the same change — they travel together, never independently.
+- Field names are identical, verbatim, across every layer: `schema.sql` column name, `db_models/` field, Redis stream field, Simulator payload, frontend JS variable. `pickup_facility_id` stays `pickup_facility_id` everywhere — no camelCase on the frontend, no abbreviating in a stream schema.
 - A backend contract change (endpoint shape, event schema, status enum) requires an update to `frontend/shared/js/` in the same change — a drifted contract is a bug, not a follow-up task.
 
 ## 7. Over-Engineering Guardrails
@@ -88,8 +89,15 @@ Last-Mile Delivery Orchestration Platform. Companion to `docs/PRD.md` and `docs/
 - Priority: PostGIS KNN returns the mathematically correct facility; VROOM matrix generation maps time windows correctly; a consumer's error path actually falls back correctly when OSRM/VROOM/Nominatim times out.
 - A shared utility verified once in its own test file is not re-tested inside every service that imports it.
 
-## 11. Local Setup (stub — fill in once `docker-compose.yml` is real)
+## 11. Deployment & Local Setup
 
-- `docker-compose up -d` — infra profile: Postgres, Redis, OSRM, VROOM, Nominatim, MinIO.
-- `docker-compose --profile core-apps up` — the four backend services.
-- Exact commands TBD until the Compose file and per-service Dockerfiles exist. Do not fabricate commands here in the meantime.
+**Deployment target: [Render](https://render.com)** — defined in `render.yaml` at the repository root.
+
+- `core-api`, `control-tower`, `driver-gateway` → Render **web services** (`uvicorn app.main:app --host 0.0.0.0 --port $PORT`).
+- `routing-worker`, `simulator` → Render **background workers** (`python -m app.main`).
+- Managed infra: **Neon DB** (Postgres + PostGIS), **Render Redis/Valkey** — connection strings injected as `DATABASE_URL` and `REDIS_URL` environment variables.
+- External routing/geocoding: OSRM, VROOM, Nominatim, MinIO — URLs injected via env vars per service (see `render.yaml`).
+
+**Docker files (`docker-compose.yml`, per-service `Dockerfile`s) are kept as-is but are not the active workflow.** Do not propose Docker commands for running or testing services. Do not modify Docker files unless explicitly asked.
+
+**Local development** runs each service as a native Python process against a locally reachable Postgres and Redis (connection strings in `.env`). Use the virtual environment at `venv/` (created by `setup_windows.ps1` / `setup_linux_mac.sh`). Exact per-service run commands: TBD — do not fabricate them.
