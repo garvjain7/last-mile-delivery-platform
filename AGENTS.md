@@ -20,13 +20,13 @@ Last-Mile Delivery Orchestration Platform. Companion to `docs/PRD.md` and `docs/
 
 | Service | Postgres access | Owns |
 |---|---|---|
-| `services/core-api/` | Yes — full, via `db-models/` | Order creation, geocoding call, PostGIS KNN facility assignment, `XADD orders_stream`. Minimal Staff/Admin: view-all + unstick-a-stuck-order. **Nothing beyond that** — no roles, no policies, no pricing. |
-| `services/routing-worker/` | Yes — full, via `db-models/` | Two consumer groups: (1) `orders_stream` → OSRM/VROOM solve → `route.published`; (2) `driver_events_stream`, filtered to terminal events only → writes `delivery_attempt`, updates `order.status`, does the `processed_event` idempotency check/insert. No HTTP routes at all. |
-| `services/control-tower/` | **None.** | Consumes `driver_events_stream` (all events), mutates its Redis Hash, broadcasts deltas over WebSocket, exposes the rescue-trigger REST endpoint. If a change requires Control Tower to touch Postgres, that's a signal the change belongs in Routing Worker instead — flag it, don't silently add a DB import here. |
-| `services/driver-gateway/` | **None. Ever.** | Stateless JWT validation, `XADD driver_events_stream`, forwards POD photos to MinIO. The one internet-facing, untrusted-client service — its blast radius if compromised is "can post fake events," never "can touch the database." |
+| `services/core_api/` | Yes — full, via `db_models/` | **Auth** (register, login, token refresh, password reset — `users`, `user_roles`, `refresh_tokens`, `password_reset_tokens`). **Home page** served at `GET /` (HTML). Order creation, geocoding call, PostGIS KNN facility assignment, `XADD orders_stream`. Minimal Staff/Admin: view-all + unstick-a-stuck-order. No roles engine, no policies, no pricing beyond this. |
+| `services/routing_worker/` | Yes — full, via `db_models/` | Two consumer groups: (1) `orders_stream` → OSRM/VROOM solve → `route.published`; (2) `driver_events_stream`, filtered to terminal events only → writes `delivery_attempt`, updates `order.status`, does the `processed_event` idempotency check/insert. No HTTP routes at all. |
+| `services/control_tower/` | **None.** | Consumes `driver_events_stream` (all events), mutates its Redis Hash, broadcasts deltas over WebSocket, exposes the rescue-trigger REST endpoint. If a change requires Control Tower to touch Postgres, that's a signal the change belongs in Routing Worker instead — flag it, don't silently add a DB import here. |
+| `services/driver_gateway/` | **None. Ever.** | Stateless JWT validation, `XADD driver_events_stream`, forwards POD photos to MinIO. The one internet-facing, untrusted-client service — its blast radius if compromised is "can post fake events," never "can touch the database." |
 | `services/simulator/` | **None.** | Calls only Driver Gateway's and Core API's public endpoints. No internal hooks, no direct DB seeding — it exists to prove the real ingestion path works, so bypassing that path defeats its purpose. |
 | `streaming/` | N/A — shared library | Redis Streams client pool, stream schemas (`orders_stream`, `route_stream`, `driver_stream`). Import from here; never open a second Redis connection pool in a service. |
-| `db-models/` | N/A — shared library | The one source of truth for every Postgres table shape. Imported only by `core-api` and `routing-worker` (the only two services with DB access). Editing a model here without checking both callers is how schema drift happens. |
+| `db_models/` | N/A — shared library | SQLAlchemy ORM models mirroring `schema.sql` exactly. Imported only by `core_api` and `routing_worker`. Editing a model here without checking both callers is how schema drift happens. |
 
 ## 3. Directory Map
 
@@ -34,6 +34,8 @@ Last-Mile Delivery Orchestration Platform. Companion to `docs/PRD.md` and `docs/
 - `streaming/schemas/` — strict event envelope definitions per stream.
 - `streaming/client.py` — the only place a Redis connection pool is constructed.
 - `db_models/` — SQLAlchemy ORM models. Must mirror `schema.sql` exactly — `schema.sql` wins on any conflict. Imported only by `core_api` and `routing_worker`.
+- `services/core_api/app/auth/` — registration, login, token refresh, password reset. Owns `users`, `user_roles`, `refresh_tokens`, `password_reset_tokens` tables.
+- `services/core_api/app/home/` — serves `GET /` (home page HTML). Static entry point for the platform.
 - `services/core_api/app/orders/` — order ingestion + facility assignment.
 - `services/core_api/app/staff/` — Admin scope, bounded per Section 2. Not a place to grow features.
 - `services/routing_worker/app/consumers/` — both consumer-group loops (routing + terminal-event) and the `XAUTOCLAIM` recovery routine.
