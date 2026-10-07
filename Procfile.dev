@@ -1,0 +1,5 @@
+core_api:      set PYTHONPATH=..\..\ && cd services\core_api && uvicorn app.main:app --host 127.0.0.1 --port 8000
+control_tower: set PYTHONPATH=..\..\ && cd services\control_tower && uvicorn app.main:app --host 127.0.0.1 --port 8001
+gateway:       set PYTHONPATH=..\..\ && cd services\driver_gateway && uvicorn app.main:app --host 127.0.0.1 --port 8002
+router:        set PYTHONPATH=..\..\ && cd services\routing_worker && python -m app.main
+simulator:     set PYTHONPATH=..\..\ && cd services\simulator && python -m app.main

@@ -103,8 +103,19 @@ Whenever you open a new terminal window to code:
 
 Verify installation:
 ```bash
-python -c "import fastapi, uvicorn, sqlalchemy, asyncpg, redis, httpx, minio, pydantic; print('ALL DEPENDENCIES LOADED!')"
+python -c "import fastapi, uvicorn, sqlalchemy, asyncpg, redis, httpx, minio, pydantic, honcho; print('ALL DEPENDENCIES LOADED!')"
 ```
+
+### Step 4: Run All Services Locally
+
+Instead of opening 5 separate terminal windows, you can boot the entire platform with one command using the included `honcho` process manager. 
+
+From the root of the repository, simply run:
+```bash
+honcho start -f Procfile.dev
+```
+
+This will spin up all 5 isolated microservices (`core_api`, `control_tower`, `driver_gateway`, `routing_worker`, and `simulator`) concurrently in the background and multiplex their logs into your current terminal. Press `Ctrl+C` to cleanly shut them all down.
 
 ---
 
