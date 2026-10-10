@@ -3,8 +3,8 @@
 
 import asyncio
 from fastapi import FastAPI
-from app.websockets.router import router as ws_router
-from app.consumers.telemetry_consumer import run_telemetry_consumer
+from services.control_tower.app.websockets.router import router as ws_router
+from services.control_tower.app.consumers.telemetry_consumer import run_telemetry_consumer
 
 app = FastAPI(title="Control Tower API", version="1.0.0")
 

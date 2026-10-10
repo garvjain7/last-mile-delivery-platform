@@ -11,3 +11,4 @@ Write-Host "Installing all platform dependencies from requirements.txt..." -Fore
 .\venv\Scripts\pip.exe install -r requirements.txt
 
 Write-Host "Setup complete! Activate the environment with: .\venv\Scripts\Activate.ps1" -ForegroundColor Cyan
+Write-Host "Then, start the unified platform by running: python services/app.py" -ForegroundColor Yellow

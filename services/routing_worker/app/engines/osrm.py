@@ -3,7 +3,7 @@
 
 import httpx
 from typing import List, Tuple, Dict, Any
-from app.config import config
+from services.routing_worker.app.config import config
 
 class OSRMClient:
     """HTTP client for OSRM table and route APIs with explicit timeouts."""

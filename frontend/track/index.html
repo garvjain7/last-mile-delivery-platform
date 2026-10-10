@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Track your parcel with a tracking code. See real-time delivery status from warehouse to your door.">
+<title>Track your parcel | Lastmile</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Hanken+Grotesk:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="/home/css/landing.css">
+<link rel="stylesheet" href="/track/css/track.css">
+</head>
+<body>
+
+<header class="wrap nav">
+  <a href="/" class="logo">
+    <svg width="30" height="30" viewBox="0 0 30 30" fill="none" aria-hidden="true"><circle cx="6" cy="23" r="3.5" fill="#F2C230"/><circle cx="24" cy="7" r="3.5" fill="#0E5A45"/><path d="M6 23 C 6 11, 20 21, 24 7" stroke="#0E5A45" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="1 5"/></svg>
+    Lastmile
+  </a>
+  <nav class="nav-links">
+    <a href="/">Home</a>
+    <a href="/login">Log in</a>
+    <a href="/register" class="btn btn-solid btn-pill">Sign up</a>
+  </nav>
+</header>
+
+<main class="wrap track-page">
+  <h1>Track your parcel</h1>
+
+  <form id="track-form" class="track" novalidate>
+    <label for="code">Tracking code</label>
+    <div class="track-row">
+      <input id="code" name="code" type="text" placeholder="Enter your tracking code" autocomplete="off">
+      <button id="track-btn" type="submit" class="btn btn-solid btn-rect">Track my order</button>
+    </div>
+  </form>
+
+  <div id="status" class="status" role="status" aria-live="polite">
+    <div id="loading" class="card skeleton" hidden aria-label="Loading">
+      <span class="sk sk-w40"></span><span class="sk sk-w70"></span><span class="sk sk-w55"></span><span class="sk sk-w60"></span>
+    </div>
+
+    <div id="message" class="notice" hidden>
+      <p id="message-text"></p>
+      <button id="retry" type="button" class="btn btn-outline btn-pill" hidden>Try again</button>
+    </div>
+
+    <div id="result" class="results" hidden>
+      <div class="card">
+        <div class="card-head">
+          <div id="r-title" class="card-title"></div>
+          <div id="r-chip" class="chip"></div>
+        </div>
+        <div id="r-eta" class="muted-lg"></div>
+      </div>
+
+      <section class="card" aria-labelledby="h-timeline">
+        <h2 id="h-timeline" class="card-h">Delivery timeline</h2>
+        <ol id="r-steps" class="stepper" aria-label="Delivery progress"></ol>
+      </section>
+
+      <section id="r-details-card" class="card" aria-labelledby="h-details" hidden>
+        <h2 id="h-details" class="card-h">Order details</h2>
+        <dl id="r-details" class="kv"></dl>
+      </section>
+    </div>
+  </div>
+</main>
+
+<footer>
+  <div class="wrap foot">
+    <div><span class="foot-name">Lastmile</span><br><span>&copy; 2026 Lastmile. All rights reserved.</span></div>
+    <div class="foot-links"><a href="/login">Log in</a><a href="/register">Sign up</a><span>Need help? [SUPPORT EMAIL]</span></div>
+  </div>
+</footer>
+
+<script src="/track/js/track.js"></script>
+</body>
+</html>

@@ -94,7 +94,7 @@ Because real-time tracking, assignment, and dynamic rescue can't be demonstrated
 | Driver offline sync | Local durable queue (IndexedDB if PWA / SQLite if native) + idempotent replay | No CRDT — single-writer, no conflict to resolve |
 | Frontend framework | **Open** | Plain HTML/CSS/JS proposed, pending squad familiarity check |
 | Observability | Structured logs, Prometheus/Grafana | Owner-side priority given platform/SRE ownership |
-| Local dev | Docker Compose | Brings up Postgres, Redis, Kafka, OSRM, VROOM, MinIO, Nominatim together |
+| Local dev | Unified Python runtime | `python services/app.py` runs the master FastAPI app and background worker loops against configured external services |
 
 ## 9. Non-Functional Requirements
 

@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Sign in to LOGIPULSE.">
+  <title>Sign in | LOGIPULSE</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Hanken+Grotesk:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="/shared/css/auth.css">
+</head>
+<body>
+  <div class="auth-shell">
+    <aside class="auth-aside">
+      <a class="auth-brand" href="/">
+        <svg width="30" height="30" viewBox="0 0 30 30" fill="none" aria-hidden="true"><circle cx="6" cy="23" r="3.5" fill="#F2C230"/><circle cx="24" cy="7" r="3.5" fill="#fff"/><path d="M6 23 C 6 11, 20 21, 24 7" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="1 5"/></svg>
+        LOGIPULSE
+      </a>
+      <div class="aside-copy">
+        <h1>Welcome back.</h1>
+        <p>Sign in to follow your deliveries and manage your orders.</p>
+      </div>
+      <svg class="aside-route" viewBox="0 0 480 250" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+        <path d="M40 210 C 110 120, 170 230, 240 140 S 380 60, 440 40" fill="none" stroke="#F2C230" stroke-width="3" stroke-dasharray="2 9" stroke-linecap="round"/>
+        <circle cx="40" cy="210" r="8" fill="#F2C230"/>
+        <text x="56" y="238" fill="#CFE3DA" font-size="15">Warehouse</text>
+        <circle cx="440" cy="40" r="8" fill="#fff"/>
+        <text x="424" y="26" text-anchor="end" fill="#CFE3DA" font-size="15">You</text>
+        <circle class="van" cx="0" cy="0" r="7" fill="#fff" stroke="#F2C230" stroke-width="3"/>
+      </svg>
+    </aside>
+
+    <main class="auth-main">
+      <div class="auth-card">
+
+        <div id="login-view">
+          <h2>Sign in</h2>
+          <p class="auth-sub">Use the email address or phone number on your account.</p>
+
+          <div class="segmented" role="group" aria-label="Sign in with">
+            <button type="button" id="tab-email" data-mode="email" aria-pressed="true">Email</button>
+            <button type="button" id="tab-phone" data-mode="phone" aria-pressed="false">Phone</button>
+          </div>
+
+          <form id="login-form" class="auth-form" novalidate>
+            <div class="field" id="group-email">
+              <label for="email">Email</label>
+              <input class="input" type="email" id="email" name="email" autocomplete="email" placeholder="name@company.com">
+            </div>
+
+            <div class="field" id="group-phone" hidden>
+              <label for="phone">Phone number</label>
+              <input class="input" type="tel" id="phone" name="phone" autocomplete="tel" inputmode="tel" placeholder="+919876543210">
+              <p class="hint">Include your country code.</p>
+            </div>
+
+            <div class="field">
+              <div class="label-row">
+                <label for="password">Password</label>
+                <button type="button" class="link-btn" id="password-reset">Forgot password?</button>
+              </div>
+              <div class="pw">
+                <input class="input" type="password" id="password" name="password" autocomplete="current-password" minlength="8" required>
+                <button type="button" class="pw-toggle" data-for="password" aria-label="Show password">Show</button>
+              </div>
+            </div>
+
+            <div id="error-box" class="msg msg-error" role="alert" hidden></div>
+            <div id="status-box" class="msg msg-ok" role="status" hidden></div>
+
+            <button type="submit" class="btn" id="login-submit">Sign in</button>
+          </form>
+
+          <p class="auth-switch">New here? <a href="/register">Create an account</a></p>
+        </div>
+
+        <div id="reset-view" hidden>
+          <h2>Reset your password</h2>
+          <p class="auth-sub">Enter your email and we'll send you a link to set a new password.</p>
+
+          <form id="forgot-password-form" class="auth-form" novalidate>
+            <div class="field">
+              <label for="reset-email">Email</label>
+              <input class="input" type="email" id="reset-email" name="email" autocomplete="email" placeholder="name@company.com" required>
+            </div>
+
+            <div id="reset-error-box" class="msg msg-error" role="alert" hidden></div>
+            <div id="reset-status-box" class="msg msg-ok" role="status" hidden></div>
+
+            <button type="submit" class="btn" id="reset-submit">Send reset link</button>
+          </form>
+
+          <p class="auth-switch"><button type="button" class="link-btn" id="back-to-login">&larr; Back to login</button></p>
+        </div>
+
+      </div>
+    </main>
+  </div>
+
+  <script src="/login/js/login.js"></script>
+</body>
+</html>

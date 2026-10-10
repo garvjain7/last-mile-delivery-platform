@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Set a new LOGIPULSE password.">
+  <meta name="robots" content="noindex">
+  <meta name="referrer" content="no-referrer">
+  <title>Reset password | LOGIPULSE</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Hanken+Grotesk:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="/shared/css/auth.css">
+</head>
+<body>
+  <div class="auth-shell">
+    <aside class="auth-aside">
+      <a class="auth-brand" href="/">
+        <svg width="30" height="30" viewBox="0 0 30 30" fill="none" aria-hidden="true"><circle cx="6" cy="23" r="3.5" fill="#F2C230"/><circle cx="24" cy="7" r="3.5" fill="#fff"/><path d="M6 23 C 6 11, 20 21, 24 7" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="1 5"/></svg>
+        LOGIPULSE
+      </a>
+      <div class="aside-copy">
+        <h1>Choose a new password.</h1>
+        <p>Set a new password to get back into your account.</p>
+      </div>
+      <svg class="aside-route" viewBox="0 0 480 250" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+        <path d="M40 210 C 110 120, 170 230, 240 140 S 380 60, 440 40" fill="none" stroke="#F2C230" stroke-width="3" stroke-dasharray="2 9" stroke-linecap="round"/>
+        <circle cx="40" cy="210" r="8" fill="#F2C230"/>
+        <text x="56" y="238" fill="#CFE3DA" font-size="15">Warehouse</text>
+        <circle cx="440" cy="40" r="8" fill="#fff"/>
+        <text x="424" y="26" text-anchor="end" fill="#CFE3DA" font-size="15">You</text>
+        <circle class="van" cx="0" cy="0" r="7" fill="#fff" stroke="#F2C230" stroke-width="3"/>
+      </svg>
+    </aside>
+
+    <main class="auth-main">
+      <div class="auth-card">
+        <h2>Create a new password</h2>
+        <p class="auth-sub">Enter your new password below.</p>
+
+        <form id="reset-form" class="auth-form" novalidate>
+          <div class="field">
+            <label for="password">New password</label>
+            <div class="pw">
+              <input class="input" type="password" id="password" name="password" autocomplete="new-password" minlength="8" required>
+              <button type="button" class="pw-toggle" data-for="password" aria-label="Show password">Show</button>
+            </div>
+            <p class="hint">At least 8 characters.</p>
+          </div>
+
+          <div class="field">
+            <label for="confirm_password">Confirm new password</label>
+            <div class="pw">
+              <input class="input" type="password" id="confirm_password" name="confirm_password" autocomplete="new-password" minlength="8" required>
+              <button type="button" class="pw-toggle" data-for="confirm_password" aria-label="Show password">Show</button>
+            </div>
+          </div>
+
+          <div id="error-box" class="msg msg-error" role="alert" hidden></div>
+          <div id="status-box" class="msg msg-ok" role="status" hidden></div>
+
+          <button type="submit" class="btn" id="reset-submit">Update password</button>
+        </form>
+
+        <p class="auth-switch">Remembered it? <a href="/login">Back to sign in</a></p>
+      </div>
+    </main>
+  </div>
+
+  <script src="/reset-password/js/reset.js"></script>
+</body>
+</html>

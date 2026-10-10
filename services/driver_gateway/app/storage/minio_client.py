@@ -2,7 +2,7 @@
 # MinIO S3 object storage client wrapper for proof-of-delivery (POD) image uploads.
 
 from minio import Minio
-from app.config import config
+from services.driver_gateway.app.config import config
 
 class MinIOStorageClient:
     """Storage client managing multi-part POD photo uploads to MinIO bucket."""

@@ -6,7 +6,7 @@ A high-performance, real-time last-mile logistics orchestration platform designe
 
 ## 🏗️ System Topology & Architecture
 
-The codebase is built as a **modular monolith** — a single unified repository deployed as four independent microservice entrypoints plus an external synthetic traffic simulator:
+The codebase is built as a **modular monolith**: one FastAPI runtime that mounts service-specific sub-apps and starts worker consumers as background async tasks.
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────┐
@@ -34,13 +34,13 @@ The codebase is built as a **modular monolith** — a single unified repository 
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Microservice Boundaries
+### Runtime Boundaries
 
-1. **`services/core_api`** (Port `8000`): Single entrypoint for Merchants and Staff. Geocodes dropoff addresses via Nominatim, assigns the nearest pickup facility using PostGIS KNN (`<->`), writes orders to Postgres, and publishes `order.created` to `orders_stream`.
-2. **`services/routing_worker`** (Background Worker): Isolated compute engine. Consumes `orders_stream` (`XREADGROUP`), batches orders per facility, solves CVRPTW using OSRM and VROOM, and commits routes to Postgres. Also processes terminal driver events (`delivery.completed` / `delivery.failed`) with idempotency checks against `processed_event`.
-3. **`services/control_tower`** (Port `8001`): Low-latency live dashboard service. **Zero Postgres access.** Consumes telemetry streams, mutates hot driver state in Redis Hashes (`fleet:driver:active:{driver_id}`), streams live position deltas over WebSockets, and exposes dynamic rescue trigger endpoints.
-4. **`services/driver_gateway`** (Port `8002`): Internet-facing untrusted client edge. **Zero Postgres access.** Performs stateless JWT verification, dumps pings immediately to `driver_events_stream`, and streams POD photos to MinIO S3 storage.
-5. **`services/simulator`**: External black-box client generator simulating virtual drivers and order traffic over public APIs.
+1. **`services/app.py`**: Unified launcher. Run from the repository root with `python services/app.py`.
+2. **`services/core_api`**: Mounted at `/`. Single entrypoint for Merchants and Staff. Geocodes dropoff addresses via Nominatim, assigns the nearest pickup facility using PostGIS KNN (`<->`), writes orders to Postgres, and publishes `order.created` to `orders_stream`.
+3. **`services/driver_gateway`**: Mounted at `/driver`. Internet-facing untrusted client edge. **Zero Postgres access.** Performs stateless JWT verification, dumps pings immediately to `driver_events_stream`, and streams POD photos to MinIO S3 storage.
+4. **`services/control_tower`**: Mounted at `/control-tower`. Low-latency live dashboard service. **Zero Postgres access.** Consumes telemetry streams, mutates hot driver state in Redis Hashes (`fleet:driver:active:{driver_id}`), streams live position deltas over WebSockets, and exposes dynamic rescue trigger endpoints.
+5. **`services/routing_worker` and `services/simulator`**: Started by the unified launcher as background async tasks when the web server boots.
 
 ---
 
@@ -106,28 +106,23 @@ Verify installation:
 python -c "import fastapi, uvicorn, sqlalchemy, asyncpg, redis, httpx, minio, pydantic; print('ALL DEPENDENCIES LOADED!')"
 ```
 
+### Step 4: Run the Unified Runtime
+
+From the root of the repository, run:
+```bash
+python services/app.py
+```
+
+This starts one FastAPI server, mounts the API sub-apps, and launches the routing worker, telemetry consumer, and simulator loops as background async tasks. Press `Ctrl+C` to shut the runtime down.
+
 ---
 
-## 🐳 Docker & Cloud Deployment
-
-### Local Container Deployment (Docker Compose)
-
-Bring up infrastructure containers locally:
-```bash
-docker-compose --profile infra up -d
-```
-
-Bring up all services locally:
-```bash
-docker-compose --profile all up -d
-```
-
-### Render Deployment
+## Cloud Deployment
 
 The repository includes a ready-to-use **`render.yaml`** Blueprint file for 1-click cloud deployment on Render:
 1. Connect your GitHub repository to [Render Dashboard](https://dashboard.render.com/).
 2. Create a new **Blueprint** instance.
-3. Render automatically provisions `core-api`, `routing-worker`, `control-tower`, `driver-gateway`, and `simulator`.
+3. Render provisions one web service that runs `python services/app.py`.
 
 ---
 

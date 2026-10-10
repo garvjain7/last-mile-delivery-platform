@@ -11,7 +11,6 @@ last-mile-platform/
 ├── requirements.txt                            # Root dependencies consolidating all microservice requirements
 ├── setup_windows.ps1                           # One-click Windows PowerShell environment setup script
 ├── setup_linux_mac.sh                          # One-click Linux/macOS environment setup script
-├── docker-compose.yml                          # Compose orchestration split into profiles (infra vs core-apps)
 ├── ai_structure.md                             # Generated document listing complete repository tree
 ├── structure.md                                # Base specification structure reference
 ├── .github/
@@ -38,8 +37,8 @@ last-mile-platform/
 │       └── events.py                           # Pydantic schemas for orders_stream, route_stream, driver_events_stream
 ├── services/
 │   ├── __init__.py
+│   ├── app.py                                  # Unified single-process FastAPI launcher
 │   ├── core_api/                               # Core API Service (Orders Ingestion & Admin)
-│   │   ├── Dockerfile
 │   │   ├── requirements.txt
 │   │   └── app/
 │   │       ├── __init__.py
@@ -55,7 +54,6 @@ last-mile-platform/
 │   │           ├── __init__.py
 │   │           └── router.py                   # Minimal Staff/Admin management endpoints
 │   ├── routing_worker/                         # Isolated Compute Engine (Consumer Loops)
-│   │   ├── Dockerfile
 │   │   ├── requirements.txt
 │   │   └── app/
 │   │       ├── __init__.py
@@ -73,7 +71,6 @@ last-mile-platform/
 │   │           ├── osrm.py                     # OSRM HTTP matrix client
 │   │           └── vroom.py                    # VROOM CVRPTW solver HTTP client
 │   ├── control_tower/                          # Live Dashboard Service (NO Postgres access)
-│   │   ├── Dockerfile
 │   │   ├── requirements.txt
 │   │   └── app/
 │   │       ├── __init__.py
@@ -89,7 +86,6 @@ last-mile-platform/
 │   │           ├── __init__.py
 │   │           └── router.py                   # WebSocket broadcast router & rescue endpoint
 │   ├── driver_gateway/                         # DMZ Edge Service (NO Postgres access)
-│   │   ├── Dockerfile
 │   │   ├── requirements.txt
 │   │   └── app/
 │   │       ├── __init__.py
@@ -105,7 +101,6 @@ last-mile-platform/
 │   │           ├── __init__.py
 │   │           └── minio_client.py             # MinIO S3 POD photo storage uploader
 │   └── simulator/                              # Black-box External Client Tester
-│       ├── Dockerfile
 │       ├── requirements.txt
 │       └── app/
 │           ├── __init__.py

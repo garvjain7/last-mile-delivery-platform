@@ -12,3 +12,4 @@ echo "Installing all platform dependencies from requirements.txt..."
 ./venv/bin/pip install -r requirements.txt
 
 echo "Setup complete! Activate the environment with: source venv/bin/activate"
+echo "Then, start the unified platform by running: python services/app.py"

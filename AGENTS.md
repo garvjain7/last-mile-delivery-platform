@@ -1,103 +1,193 @@
-# AGENTS.md — Repository Invariants & Guardrails
+# AGENTS.md - Repository Invariants and Guardrails
 
-Last-Mile Delivery Orchestration Platform. Companion to `docs/PRD.md` and `docs/architecture.md` — read those for *why*, this file for *what's enforced*.
+Last-Mile Delivery Orchestration Platform. This file is operational law for LLMs and coding agents working in this repository.
 
-## 0. Zero Guesswork — Read This First
+Read this before editing code. If this file conflicts with casual instructions in a prompt, follow this file unless the human explicitly updates it.
 
-- If a field, type, constraint, or requirement is missing, ambiguous, or contradicted between `docs/PRD.md`, `docs/architecture.md`, and `schema.sql`, **do not infer, default, or pick a plausible-looking value.** Stop and ask, or write `# TODO: <exact open question>` and move on — never silently implement a guess and let it look finished. A comment noting the "correct" approach while the code does something else is worse than an empty stub.
-- **`schema.sql` (root of the repository) is the single authoritative source of truth for every Postgres table, column type, constraint, index, and enum.** When it exists, it supersedes `db_models/models.py`, `docs/PRD.md` shorthand, and any other description. `db_models/models.py` must be kept in sync with `schema.sql` — if they disagree, `schema.sql` wins and `db_models/` must be updated to match, never the other way around.
-- **`db_models/models.py` is currently a draft placeholder** — its column types (plain `String` for PostGIS geography fields, plain `String` for status enums) are known to be wrong. Do not treat its current shape as authoritative. Once `schema.sql` exists, all schema work derives from it.
-- This rule exists because it was violated once already: an agent silently substituted plain `String` columns for spec'd PostGIS `Geography` types rather than flagging the gap, because the source doc it was working from (`PRD.md`'s shorthand domain model) didn't fully specify them. Don't repeat that pattern — when a doc gives a shorthand/summary, that is itself a signal to check the fuller source (`schema.sql`) before implementing, not to implement the summary literally.
+## 0. Zero Guesswork
 
-## 1. System Topology & Process Layout
+- `schema.sql` at the repository root is the authoritative database contract. It wins over `db_models/models.py`, docs, comments, and assumptions.
+- If a table, column, enum, index, relationship, endpoint path, Redis stream field, or service ownership rule is missing or contradictory, do not invent a value. Ask the human or leave `# TODO: <exact open question>` at the narrow point of uncertainty.
+- Do not write code that silently implements a plausible substitute for a missing contract. A comment saying the correct thing while the code does something else is worse than a stub.
+- `db_models/models.py` must mirror `schema.sql`. If they disagree, update `db_models/models.py` to match `schema.sql`, not the other way around.
+- Current known schema gap: `schema.sql` defines `route_stops.sequence` as `integer`; requested fractional/floating stop sequencing is not authoritative until `schema.sql` and `db_models/models.py` are changed together.
 
-- **Architecture**: Modular monolith codebase (`services/core-api`, `services/routing-worker`, `services/control-tower` share the platform's conventions and a Postgres schema) deployed as four independently running processes, plus a fully external simulator.
-- **Event backbone**: Redis Streams exclusively (`XADD`, `XREADGROUP`, `XACK`). Kafka does not exist in this stack — do not add it, do not reference it in code or comments.
-- **State model**: Keyed Redis Hashes (`fleet:driver:active:{driver_id}`) for hot fleet tracking, not an in-process map — this survives a Control Tower restart.
-- **Idempotency**: `processed_event` (Postgres) keyed by client-generated UUID. Only used for events with real side effects (`delivery.completed`, `delivery.failed`). Live location pings are NOT checked against it — overwriting a Redis Hash with the same value twice is already idempotent; adding a dedupe check there is unnecessary I/O.
+## 1. Unified Runtime
 
-## 2. Service Boundaries — Who Touches What
+The repository is a modular monolith executed as one Python runtime.
 
-| Service | Postgres access | Owns |
-|---|---|---|
-| `services/core-api/` | Yes — full, via `db-models/` | Order creation, geocoding call, PostGIS KNN facility assignment, `XADD orders_stream`. Minimal Staff/Admin: view-all + unstick-a-stuck-order. **Nothing beyond that** — no roles, no policies, no pricing. |
-| `services/routing-worker/` | Yes — full, via `db-models/` | Two consumer groups: (1) `orders_stream` → OSRM/VROOM solve → `route.published`; (2) `driver_events_stream`, filtered to terminal events only → writes `delivery_attempt`, updates `order.status`, does the `processed_event` idempotency check/insert. No HTTP routes at all. |
-| `services/control-tower/` | **None.** | Consumes `driver_events_stream` (all events), mutates its Redis Hash, broadcasts deltas over WebSocket, exposes the rescue-trigger REST endpoint. If a change requires Control Tower to touch Postgres, that's a signal the change belongs in Routing Worker instead — flag it, don't silently add a DB import here. |
-| `services/driver-gateway/` | **None. Ever.** | Stateless JWT validation, `XADD driver_events_stream`, forwards POD photos to MinIO. The one internet-facing, untrusted-client service — its blast radius if compromised is "can post fake events," never "can touch the database." |
-| `services/simulator/` | **None.** | Calls only Driver Gateway's and Core API's public endpoints. No internal hooks, no direct DB seeding — it exists to prove the real ingestion path works, so bypassing that path defeats its purpose. |
-| `streaming/` | N/A — shared library | Redis Streams client pool, stream schemas (`orders_stream`, `route_stream`, `driver_stream`). Import from here; never open a second Redis connection pool in a service. |
-| `db-models/` | N/A — shared library | The one source of truth for every Postgres table shape. Imported only by `core-api` and `routing-worker` (the only two services with DB access). Editing a model here without checking both callers is how schema drift happens. |
+Supported local command from the repository root:
 
-## 3. Directory Map
+```bash
+python services/app.py
+```
 
-- `schema.sql` — root of the repository. The single authoritative DDL for every Postgres table, type, index, and enum. Read this before touching any schema-adjacent code.
-- `streaming/schemas/` — strict event envelope definitions per stream.
-- `streaming/client.py` — the only place a Redis connection pool is constructed.
-- `db_models/` — SQLAlchemy ORM models. Must mirror `schema.sql` exactly — `schema.sql` wins on any conflict. Imported only by `core_api` and `routing_worker`.
-- `services/core_api/app/orders/` — order ingestion + facility assignment.
-- `services/core_api/app/staff/` — Admin scope, bounded per Section 2. Not a place to grow features.
-- `services/routing_worker/app/consumers/` — both consumer-group loops (routing + terminal-event) and the `XAUTOCLAIM` recovery routine.
-- `services/routing_worker/app/engines/` — OSRM/VROOM HTTP clients.
-- `services/control_tower/app/fleet_state/` — Redis Hash read/write logic.
-- `services/control_tower/app/websockets/` — connection management, delta broadcast.
-- `services/driver_gateway/app/auth/`, `.../ingestion/`, `.../storage/` — no other subfolders; no database utilities of any kind land here.
+Do not run or document these as the active workflow:
 
-## 4. Async & Stream Concurrency Rules
+- `honcho start`
+- `Procfile.dev`
+- per-service Uvicorn commands
+- per-service `python -m app.main` commands
+- custom `$env:PYTHONPATH` or `PYTHONPATH=...` terminal setup
+- Docker Compose or per-service Dockerfiles
+- multiple service-specific virtual environments
 
-- Every FastAPI endpoint and every persistent consumer loop is `async def`. No exceptions.
-- Zero sync-blocking I/O inside async paths. Any unavoidable sync call (or CPU-bound VROOM matrix parsing) is wrapped in `asyncio.to_thread(...)` — a blocking call here freezes the entire event loop, taking down every request that process is serving, not just the one that triggered it.
-- `XREADGROUP` with an explicit, per-service consumer group ID. Never a bare `XREAD` for anything that needs at-least-once delivery.
-- `XACK` only after the corresponding Postgres write commits — never before. Acking first silently loses the message if the process crashes in between.
-- `MAXLEN ~ 50000` on every `XADD`. Redis Streams live entirely in memory; an untrimmed stream is a path to exhausting Redis, which takes down the event backbone *and* the hot-state store together (same instance).
-- `XAUTOCLAIM` runs lazily at the top of each consumer's batch read, not as a separate standing background thread — a stuck message sitting an extra poll cycle costs nothing at this scale; a permanent extra thread is unneeded overhead.
+The active local environment is the root `venv/`. Install dependencies from root `requirements.txt`.
 
-## 5. Data Access Rules
+## 2. Gateway and Route Ownership
 
-- Location/facility lookups use PostGIS `<->` (GiST/KNN) exclusively. Linear coordinate scans are a rejected pattern, not a style preference.
-- Never hand-write vehicle routing, capacity, or time-window logic — that's VROOM's job via its input config. If VROOM's output looks wrong, fix the input, don't build a parallel solver.
-- Config loads once, per-service, in that service's own `app/config.py`. Never scatter `os.getenv()` calls across modules.
+Port `8000` is the only local gateway.
 
-## 6. Schema & Contract Discipline
+Canonical public API namespaces for new route work:
 
-- **`schema.sql` (root) is the schema contract.** Any change to table shape, column type, index, or enum starts in `schema.sql`. The corresponding `db_models/` update must land in the same change — they travel together, never independently.
-- Field names are identical, verbatim, across every layer: `schema.sql` column name, `db_models/` field, Redis stream field, Simulator payload, frontend JS variable. `pickup_facility_id` stays `pickup_facility_id` everywhere — no camelCase on the frontend, no abbreviating in a stream schema.
-- A backend contract change (endpoint shape, event schema, status enum) requires an update to `frontend/shared/js/` in the same change — a drifted contract is a bug, not a follow-up task.
+| Namespace | Owner |
+| --- | --- |
+| `/api/v1/merchant` | Core API merchant, auth, order, and staff/admin routes. |
+| `/api/v1/control` | Control Tower REST and WebSocket routes. |
+| `/api/v1/driver` | Driver Gateway telemetry and POD ingestion routes. |
 
-## 7. Over-Engineering Guardrails
+Current implementation mounts in `services/app.py` are transitional:
 
-- **This is a 3-month prototype.** No speculative abstraction layers, no pluggable drivers, no generalization for a use case that hasn't been requested.
-- Don't solve problems this system doesn't have. Concrete example: no concurrent multi-writer merge logic for driver sync — a driver's own phone is the only writer of its own data.
-- Prefer infrastructure that already solves the problem over hand-written equivalents: Redis consumer groups over a custom retry queue, PostGIS KNN over a custom nearest-neighbor scan.
-- Carrier/Partner, full RBAC/policy/pricing Admin, ML cost-matrix/trajectory models: not implemented, not scaffolded, not stubbed "while I'm in here." See `docs/PRD.md` Section 2/11.
+| Current mount | Source |
+| --- | --- |
+| `/` | `services.core_api.app.main:app` |
+| `/driver` | `services.driver_gateway.app.main:app` |
+| `/control-tower` | `services.control_tower.app.main:app` |
 
-## 8. Code & Comment Conventions
+Do not add another process or port to solve routing. Move routers under the gateway contract.
 
-- Self-documenting code first: precise domain terminology from `docs/PRD.md`, expressive names, no abbreviations that aren't already established (e.g. `pod_photo_url`, not `ppu`).
-- Docstrings on classes/module boundaries describe *what*. Inline `#` comments are reserved for *why* — a non-obvious workaround, a timeout quirk, an upstream OSRM bug. A comment restating what the next line does is deleted, not written.
-- No naked `except: pass`. Catch explicit exceptions, log with context, let the failure bubble to process level so the isolation boundaries in Section 2 actually catch it.
-- Every external call (Nominatim, OSRM, VROOM, Postgres, Redis) is treated as unreliable: explicit timeout, explicit error handling. See `docs/architecture.md` Section 6 for the exact client/timeout table.
+## 3. Process and Task Model
 
-## 9. Reuse & Duplication
+`services/app.py` owns process lifecycle.
 
-- Before writing a new utility or client wrapper, check `streaming/` and `db-models/` first. Don't recreate a Redis connection pool or a model that already exists.
-- A new domain feature mirrors the structural pattern of an existing one (same retry strategy, same consumer-loop shape) — don't invent a new pattern for something structurally identical to what's already there.
-- "Done" means the full pipe is verified — stream ingestion → processing → Postgres persistence → WebSocket broadcast — not just that the isolated function compiles.
+- It appends the repository root to `sys.path` immediately.
+- It creates the master FastAPI application.
+- It starts background async loops in FastAPI lifespan startup.
+- It cancels and gathers those tasks on shutdown.
 
-## 10. Testing
+Long-running workers must expose awaitable entrypoints:
 
-- Test business logic and structural invariants, not the language or framework itself. No tests asserting FastAPI can parse a query string.
-- Priority: PostGIS KNN returns the mathematically correct facility; VROOM matrix generation maps time windows correctly; a consumer's error path actually falls back correctly when OSRM/VROOM/Nominatim times out.
-- A shared utility verified once in its own test file is not re-tested inside every service that imports it.
+| Package | Required awaitable shape |
+| --- | --- |
+| `services/routing_worker/` | `async def start_consumer()` |
+| `services/control_tower/` | `async def run_telemetry_consumer()` |
+| `services/simulator/` | `async def start_simulator()` |
 
-## 11. Deployment & Local Setup
+No consumer module may call `asyncio.run()` except inside a CLI compatibility guard:
 
-**Deployment target: [Render](https://render.com)** — defined in `render.yaml` at the repository root.
+```python
+if __name__ == "__main__":
+    asyncio.run(main())
+```
 
-- `core-api`, `control-tower`, `driver-gateway` → Render **web services** (`uvicorn app.main:app --host 0.0.0.0 --port $PORT`).
-- `routing-worker`, `simulator` → Render **background workers** (`python -m app.main`).
-- Managed infra: **Neon DB** (Postgres + PostGIS), **Render Redis/Valkey** — connection strings injected as `DATABASE_URL` and `REDIS_URL` environment variables.
-- External routing/geocoding: OSRM, VROOM, Nominatim, MinIO — URLs injected via env vars per service (see `render.yaml`).
+Infinite loops cannot execute at import time.
 
-**Docker files (`docker-compose.yml`, per-service `Dockerfile`s) are kept as-is but are not the active workflow.** Do not propose Docker commands for running or testing services. Do not modify Docker files unless explicitly asked.
+## 4. Import Rules
 
-**Local development** runs each service as a native Python process against a locally reachable Postgres and Redis (connection strings in `.env`). Use the virtual environment at `venv/` (created by `setup_windows.ps1` / `setup_linux_mac.sh`). Exact per-service run commands: TBD — do not fabricate them.
+Use repository-root imports. Never rely on a service folder pretending to be the top-level `app` package.
+
+Allowed cross-boundary imports:
+
+```python
+from streaming.client import ...
+from streaming.schemas.events import ...
+from db_models.models import ...
+from services.core_api.app.config import config
+from services.routing_worker.app.consumers.orders_consumer import run_orders_consumer
+```
+
+Forbidden patterns:
+
+```python
+from app.config import ...
+from app.database.connection import ...
+from app.auth import ...
+```
+
+Service packages may import their own internal modules through the full `services.<service>.app...` path. Shared infrastructure must live in `streaming/` or `db_models/`; do not create duplicate Redis clients, duplicate SQLAlchemy models, or service-local schema definitions.
+
+## 5. Service Boundaries
+
+| Package | Postgres access | Owns |
+| --- | --- | --- |
+| `services/core_api/` | Yes, via `db_models/` | Auth, merchant/order APIs, geocoding, warehouse assignment, staff/admin recovery operations, static home/frontend serving. |
+| `services/routing_worker/` | Yes, via `db_models/` | Redis consumer groups, OSRM/VROOM orchestration, route persistence, terminal delivery side effects. |
+| `services/control_tower/` | No | Redis hot state, WebSocket fanout, rescue trigger route. |
+| `services/driver_gateway/` | No | Stateless driver JWT validation, telemetry ingestion, POD forwarding. |
+| `services/simulator/` | No | External-client simulation through public HTTP APIs only. |
+| `streaming/` | N/A | Redis client pool and stream schemas. |
+| `db_models/` | N/A | ORM mirror of `schema.sql`. |
+
+Control Tower and Driver Gateway must not import database connection modules or `db_models.models`.
+
+## 6. Redis and Stream Rules
+
+- Redis Streams are the event backbone. Kafka does not exist in this stack.
+- Use `XADD`, `XREADGROUP`, `XACK`, and lazy `XAUTOCLAIM` where at-least-once processing is required.
+- `XACK` only after durable side effects commit.
+- Every `XADD` must use bounded trimming: `MAXLEN ~ 50000`.
+- Live location pings are not deduped through Postgres. They update Redis hot state and are naturally idempotent when repeated.
+- Terminal events with durable side effects require idempotency by client-generated event UUID once the authoritative table exists.
+
+## 7. Database and Spatial Rules
+
+- Location lookups use PostGIS and indexes from `schema.sql`; linear coordinate scans are not acceptable.
+- `warehouses.location` and `orders.delivery_location` are `geography(Point, 4326)`.
+- Driver live location belongs in Redis hot state, not the `drivers` table.
+- Driver profile identity is `drivers.user_id`, a foreign key to `users(id)`.
+- Do not add driver database access to Driver Gateway or Control Tower.
+- Do not implement fractional route-stop sequencing until `schema.sql` changes `route_stops.sequence` away from integer and `db_models/models.py` is updated in the same change.
+
+## 8. Async and I/O Rules
+
+- Every FastAPI route and persistent consumer loop is `async def`.
+- No sync-blocking I/O inside async paths. Use async clients or `asyncio.to_thread(...)` for unavoidable blocking work.
+- Every external dependency call has an explicit timeout: Postgres, Redis, OSRM, VROOM, Nominatim, MinIO, SMTP.
+- Config loads once per package from that package's `app/config.py`. Do not scatter `os.getenv()` across feature modules.
+
+## 9. Contract Discipline
+
+- Field names stay identical across `schema.sql`, ORM models, Redis stream schemas, simulator payloads, and frontend JavaScript.
+- Backend route or payload changes require matching frontend/shared contract updates in the same change.
+- Do not camelCase backend fields in frontend code if the backend contract is snake_case.
+- Do not introduce speculative RBAC, pricing, carrier integration, ML routing, or partner APIs.
+
+## 10. Testing and Verification
+
+Run features globally through the unified launcher.
+
+Preferred verification pattern:
+
+```bash
+python services/app.py
+```
+
+For import and route smoke tests, use the root environment and import `services.app`.
+
+Do not verify by starting individual service processes unless the human explicitly asks for legacy compatibility. A feature is not done because one isolated module imports; it must work through the unified gateway/runtime path.
+
+Test priority:
+
+- PostGIS KNN warehouse assignment.
+- Redis stream publish/consume/ack behavior.
+- OSRM/VROOM timeout and fallback behavior.
+- Terminal event idempotency.
+- WebSocket broadcast behavior through the gateway.
+- Driver Gateway and Control Tower remaining database-free.
+
+## 11. Deployment
+
+Deployment target is Render, defined in root `render.yaml`.
+
+Render runs the same unified entrypoint:
+
+```bash
+python services/app.py
+```
+
+Managed infrastructure:
+
+- Neon Postgres with PostGIS via `DATABASE_URL`.
+- Render Redis/Valkey via `REDIS_URL`.
+- External OSRM, VROOM, Nominatim, and MinIO endpoints via environment variables.
+
