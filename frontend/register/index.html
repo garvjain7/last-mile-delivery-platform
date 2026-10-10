@@ -4,73 +4,91 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="description" content="Create a LOGIPULSE account.">
-  <title>Create Account | LOGIPULSE</title>
-  <link rel="stylesheet" href="/shared/css/global.css">
-  <link rel="stylesheet" href="/register/css/register.css">
+  <title>Create account | LOGIPULSE</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Hanken+Grotesk:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="/shared/css/auth.css">
 </head>
-<body class="register-page">
-  <main class="register-shell">
-    <section class="register-panel" aria-labelledby="register-title">
-      <a class="register-brand" href="/">LOGIPULSE</a>
-      <p class="eyebrow">Account registration</p>
-      <h1 id="register-title">Create a verified account for delivery access.</h1>
-      <p>
-        Customer and driver self-service onboarding is handled automatically. Merchant, dispatcher,
-        fleet manager, and administrator accounts are provisioned by operations teams.
-      </p>
-
-      <div class="provisioning-note">
-        <strong>Account routing after registration</strong>
-        <span>Successful registration creates your secure session and redirects to your dedicated workspace.</span>
+<body>
+  <div class="auth-shell">
+    <aside class="auth-aside">
+      <a class="auth-brand" href="/">
+        <svg width="30" height="30" viewBox="0 0 30 30" fill="none" aria-hidden="true"><circle cx="6" cy="23" r="3.5" fill="#F2C230"/><circle cx="24" cy="7" r="3.5" fill="#fff"/><path d="M6 23 C 6 11, 20 21, 24 7" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="1 5"/></svg>
+        LOGIPULSE
+      </a>
+      <div class="aside-copy">
+        <h1>Create your account.</h1>
+        <p>Follow every parcel to your door, or join our drivers. It takes a minute.</p>
       </div>
-    </section>
+      <svg class="aside-route" viewBox="0 0 480 250" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+        <path d="M40 210 C 110 120, 170 230, 240 140 S 380 60, 440 40" fill="none" stroke="#F2C230" stroke-width="3" stroke-dasharray="2 9" stroke-linecap="round"/>
+        <circle cx="40" cy="210" r="8" fill="#F2C230"/>
+        <text x="56" y="238" fill="#CFE3DA" font-size="15">Warehouse</text>
+        <circle cx="440" cy="40" r="8" fill="#fff"/>
+        <text x="424" y="26" text-anchor="end" fill="#CFE3DA" font-size="15">You</text>
+        <circle class="van" cx="0" cy="0" r="7" fill="#fff" stroke="#F2C230" stroke-width="3"/>
+      </svg>
+    </aside>
 
-    <section class="register-card" aria-label="Registration form">
-      <div class="account-toggle" role="tablist" aria-label="Choose account type">
-        <button type="button" class="account-option active" data-role="customer" role="tab" aria-selected="true">Customer</button>
-        <button type="button" class="account-option" data-role="driver" role="tab" aria-selected="false">Driver</button>
-      </div>
+    <main class="auth-main">
+      <div class="auth-card">
+        <h2>Create your account</h2>
+        <p class="auth-sub">Choose the type of account you need.</p>
 
-      <div id="register-error" class="register-message register-error" role="alert"></div>
-      <div id="register-status" class="register-message register-status" role="status"></div>
-
-      <form id="register-form" class="register-form" novalidate>
-        <div class="form-group">
-          <label class="form-label" for="full_name">Full name</label>
-          <input class="form-input" type="text" id="full_name" name="full_name" autocomplete="name" required>
+        <div class="segmented" id="role-toggle" role="group" aria-label="Account type">
+          <button type="button" data-role="customer" aria-pressed="true">Customer</button>
+          <button type="button" data-role="driver" aria-pressed="false">Driver</button>
         </div>
+        <p class="hint" id="role-hint">Track your parcels and see all your orders in one place.</p>
 
-        <div class="identifier-grid">
-          <div class="form-group">
-            <label class="form-label" for="email">Email</label>
-            <input class="form-input" type="email" id="email" name="email" autocomplete="email" placeholder="name@company.com">
+        <form id="register-form" class="auth-form" novalidate>
+          <div class="field">
+            <label for="full_name">Full name</label>
+            <input class="input" type="text" id="full_name" name="full_name" autocomplete="name" required>
           </div>
-          <div class="form-group">
-            <label class="form-label" for="phone">Phone</label>
-            <input class="form-input" type="tel" id="phone" name="phone" autocomplete="tel" placeholder="+919876543210">
+
+          <div class="row-2">
+            <div class="field">
+              <label for="email">Email</label>
+              <input class="input" type="email" id="email" name="email" autocomplete="email" placeholder="name@company.com">
+            </div>
+            <div class="field">
+              <label for="phone">Phone</label>
+              <input class="input" type="tel" id="phone" name="phone" autocomplete="tel" inputmode="tel" placeholder="+919876543210">
+            </div>
           </div>
+          <p class="hint">Add an email, a phone number, or both. Include your country code for a phone number.</p>
+
+          <div class="field">
+            <label for="password">Password</label>
+            <div class="pw">
+              <input class="input" type="password" id="password" name="password" autocomplete="new-password" minlength="8" required>
+              <button type="button" class="pw-toggle" data-for="password" aria-label="Show password">Show</button>
+            </div>
+            <p class="hint">At least 8 characters.</p>
+          </div>
+
+          <div class="field">
+            <label for="confirm_password">Confirm password</label>
+            <div class="pw">
+              <input class="input" type="password" id="confirm_password" name="confirm_password" autocomplete="new-password" minlength="8" required>
+              <button type="button" class="pw-toggle" data-for="confirm_password" aria-label="Show password">Show</button>
+            </div>
+          </div>
+
+          <div id="register-error" class="msg msg-error" role="alert" hidden></div>
+          <div id="register-status" class="msg msg-ok" role="status" hidden></div>
+
+          <button type="submit" class="btn" id="register-submit">Create account</button>
+        </form>
+
+        <div class="auth-switch">
+          <p>Already have an account? <a href="/login">Sign in</a></p>
+          <p>Selling or managing deliveries for a business? Business accounts are set up by our team.</p>
         </div>
-
-        <div class="field-hint">Provide email or phone. Phone numbers must use E.164 format.</div>
-
-        <div class="form-group">
-          <label class="form-label" for="password">Password</label>
-          <input class="form-input" type="password" id="password" name="password" autocomplete="new-password" minlength="8" required>
-        </div>
-
-        <div class="form-group">
-          <label class="form-label" for="confirm_password">Confirm Password</label>
-          <input class="form-input" type="password" id="confirm_password" name="confirm_password" autocomplete="new-password" minlength="8" required>
-        </div>
-
-        <button type="submit" class="register-submit" id="register-submit">Create account</button>
-      </form>
-
-      <div class="signin-link">
-        Already have an account? <a href="/login">Sign in</a>
       </div>
-    </section>
-  </main>
+    </main>
+  </div>
 
   <script src="/register/js/register.js"></script>
 </body>

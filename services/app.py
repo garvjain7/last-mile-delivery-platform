@@ -111,6 +111,7 @@ app.mount("/login/css", StaticFiles(directory=FRONTEND_DIR / "login" / "css"), n
 app.mount("/login/js", StaticFiles(directory=FRONTEND_DIR / "login" / "js"), name="login-js")
 app.mount("/register/css", StaticFiles(directory=FRONTEND_DIR / "register" / "css"), name="register-css")
 app.mount("/register/js", StaticFiles(directory=FRONTEND_DIR / "register" / "js"), name="register-js")
+app.mount("/reset-password/js", StaticFiles(directory=FRONTEND_DIR / "reset-password" / "js"), name="reset-password-js")
 app.mount("/track/css", StaticFiles(directory=FRONTEND_DIR / "track" / "css"), name="track-css")
 app.mount("/track/js", StaticFiles(directory=FRONTEND_DIR / "track" / "js"), name="track-js")
 app.mount(
