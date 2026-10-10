@@ -332,7 +332,7 @@ class Order(Base):
     window_latest:      Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     weight_kg:          Mapped[float]              = mapped_column(Numeric(10, 3), nullable=False)
     volume_m3:          Mapped[float]              = mapped_column(Numeric(10, 4), nullable=False)
-    tracking_token:     Mapped[str]                = mapped_column(Text, unique=True, nullable=False)
+    tracking_token:     Mapped[str]                = mapped_column(Text, unique=True, nullable=False, server_default=func.generate_tracking_token(10))
     created_at:         Mapped[datetime]           = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at:         Mapped[datetime]           = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 

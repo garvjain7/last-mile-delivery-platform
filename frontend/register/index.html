@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Create a LOGIPULSE account.">
+  <title>Create Account | LOGIPULSE</title>
+  <link rel="stylesheet" href="/shared/css/global.css">
+  <link rel="stylesheet" href="/register/css/register.css">
+</head>
+<body class="register-page">
+  <main class="register-shell">
+    <section class="register-panel" aria-labelledby="register-title">
+      <a class="register-brand" href="/">LOGIPULSE</a>
+      <p class="eyebrow">Account registration</p>
+      <h1 id="register-title">Create a verified account for delivery access.</h1>
+      <p>
+        Customer and driver self-service onboarding is handled automatically. Merchant, dispatcher,
+        fleet manager, and administrator accounts are provisioned by operations teams.
+      </p>
+
+      <div class="provisioning-note">
+        <strong>Account routing after registration</strong>
+        <span>Successful registration creates your secure session and redirects to your dedicated workspace.</span>
+      </div>
+    </section>
+
+    <section class="register-card" aria-label="Registration form">
+      <div class="account-toggle" role="tablist" aria-label="Choose account type">
+        <button type="button" class="account-option active" data-role="customer" role="tab" aria-selected="true">Customer</button>
+        <button type="button" class="account-option" data-role="driver" role="tab" aria-selected="false">Driver</button>
+      </div>
+
+      <div id="register-error" class="register-message register-error" role="alert"></div>
+      <div id="register-status" class="register-message register-status" role="status"></div>
+
+      <form id="register-form" class="register-form" novalidate>
+        <div class="form-group">
+          <label class="form-label" for="full_name">Full name</label>
+          <input class="form-input" type="text" id="full_name" name="full_name" autocomplete="name" required>
+        </div>
+
+        <div class="identifier-grid">
+          <div class="form-group">
+            <label class="form-label" for="email">Email</label>
+            <input class="form-input" type="email" id="email" name="email" autocomplete="email" placeholder="name@company.com">
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="phone">Phone</label>
+            <input class="form-input" type="tel" id="phone" name="phone" autocomplete="tel" placeholder="+919876543210">
+          </div>
+        </div>
+
+        <div class="field-hint">Provide email or phone. Phone numbers must use E.164 format.</div>
+
+        <div class="form-group">
+          <label class="form-label" for="password">Password</label>
+          <input class="form-input" type="password" id="password" name="password" autocomplete="new-password" minlength="8" required>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="confirm_password">Confirm Password</label>
+          <input class="form-input" type="password" id="confirm_password" name="confirm_password" autocomplete="new-password" minlength="8" required>
+        </div>
+
+        <button type="submit" class="register-submit" id="register-submit">Create account</button>
+      </form>
+
+      <div class="signin-link">
+        Already have an account? <a href="/login">Sign in</a>
+      </div>
+    </section>
+  </main>
+
+  <script src="/register/js/register.js"></script>
+</body>
+</html>

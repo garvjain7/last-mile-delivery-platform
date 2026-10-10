@@ -2,11 +2,11 @@
 # FastAPI application entrypoint for Driver Gateway service.
 
 from fastapi import FastAPI
-from app.ingestion.router import router as ingestion_router
+from services.driver_gateway.app.ingestion.router import router as ingestion_router
 
 app = FastAPI(title="Driver Gateway API", version="1.0.0")
 
-app.include_router(ingestion_router, prefix="/driver", tags=["Driver Ingestion"])
+app.include_router(ingestion_router, tags=["Driver Ingestion"])
 
 @app.get("/health/live")
 async def health_live():

@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Secure LOGIPULSE sign in.">
+  <title>Sign In | LOGIPULSE</title>
+  <link rel="stylesheet" href="/shared/css/global.css">
+  <link rel="stylesheet" href="/login/css/login.css">
+</head>
+<body class="login-page">
+  <main class="login-shell">
+    <section class="login-intelligence" aria-label="Platform access overview">
+      <a class="login-brand" href="/">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <span>LOGIPULSE</span>
+      </a>
+
+      <div class="login-intelligence-copy">
+        <p class="eyebrow">Secure operational access</p>
+        <h1>Role-aware workspaces for every last-mile operating function.</h1>
+        <p>
+          Sign in once to route each user into the correct dashboard: merchant order intake,
+          dispatcher live control, fleet driver operations, active driver route execution,
+          customer delivery tracking, or administrator oversight.
+        </p>
+      </div>
+
+      <div class="role-matrix" aria-label="Available workspace destinations">
+        <div>
+          <span>Admin</span>
+          <strong>/workspaces/admin/operations</strong>
+        </div>
+        <div>
+          <span>Dispatcher</span>
+          <strong>/workspaces/dispatcher/live-dispatch</strong>
+        </div>
+        <div>
+          <span>Fleet Manager</span>
+          <strong>/workspaces/fleet-manager/driver-operations</strong>
+        </div>
+        <div>
+          <span>Merchant</span>
+          <strong>/workspaces/merchant/order-intake</strong>
+        </div>
+        <div>
+          <span>Driver</span>
+          <strong>/workspaces/driver/active-route</strong>
+        </div>
+        <div>
+          <span>Customer</span>
+          <strong>/workspaces/customer/delivery-tracking</strong>
+        </div>
+      </div>
+    </section>
+
+    <section class="login-panel" aria-labelledby="login-title">
+      <div class="panel-header">
+        <p class="eyebrow">Identity verification</p>
+        <h2 id="login-title">Sign in to your workspace</h2>
+        <p>Use the email address or E.164 phone number associated with your LOGIPULSE account.</p>
+      </div>
+
+      <div id="login-view">
+        <div class="identifier-toggle" role="tablist" aria-label="Choose login identifier">
+          <button type="button" class="toggle-option active" id="tab-email" data-mode="email" role="tab" aria-selected="true">Email</button>
+          <button type="button" class="toggle-option" id="tab-phone" data-mode="phone" role="tab" aria-selected="false">Phone</button>
+        </div>
+
+        <div id="error-box" class="auth-message auth-error" role="alert"></div>
+        <div id="status-box" class="auth-message auth-status" role="status"></div>
+
+        <form id="login-form" class="login-form" novalidate>
+          <div class="form-group" id="group-email">
+            <label class="form-label" for="email">Work email</label>
+            <input class="form-input" type="email" id="email" name="email" autocomplete="email" placeholder="operations@company.com">
+          </div>
+
+          <div class="form-group hidden" id="group-phone">
+            <label class="form-label" for="phone">Phone number</label>
+            <input class="form-input" type="tel" id="phone" name="phone" autocomplete="tel" placeholder="+919876543210">
+          </div>
+
+          <div class="form-group">
+            <div class="label-row">
+              <label class="form-label" for="password">Password</label>
+              <button class="reset-link" type="button" id="password-reset">Forgot password?</button>
+            </div>
+            <input class="form-input" type="password" id="password" name="password" autocomplete="current-password" minlength="8" required>
+          </div>
+
+          <button type="submit" class="submit-button" id="login-submit">Continue to workspace</button>
+        </form>
+
+        <div class="access-note">
+          New customer or driver account? <a href="/register">Create an account</a>.
+        </div>
+      </div>
+
+      <div id="reset-view" class="hidden">
+        <div id="reset-error-box" class="auth-message auth-error" role="alert"></div>
+        <div id="reset-status-box" class="auth-message auth-status" role="status"></div>
+        <form id="forgot-password-form" class="login-form" novalidate>
+          <div class="form-group">
+            <label class="form-label" for="reset-email">Email</label>
+            <input class="form-input" type="email" id="reset-email" name="email" autocomplete="email" placeholder="name@company.com" required>
+          </div>
+          <button type="submit" class="submit-button" id="reset-submit">Send reset link</button>
+          <div class="access-note" style="margin-top: 1rem; text-align: center;">
+            <button type="button" class="reset-link" id="back-to-login">← Back to login</button>
+          </div>
+        </form>
+      </div>
+    </section>
+  </main>
+
+  <script src="/login/js/login.js"></script>
+</body>
+</html>

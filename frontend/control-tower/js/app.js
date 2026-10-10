@@ -9,7 +9,7 @@ class ControlTowerApp {
 
     init() {
         console.log("Initializing Control Tower WebSocket connection...");
-        // TODO: Connect to WebSocket endpoint ws://localhost:8001/ws/fleet
+        // TODO: Connect to WebSocket endpoint ws://localhost:8000/control-tower/ws/fleet
         // TODO: Perform targeted DOM/marker updates on driver delta receive
     }
 

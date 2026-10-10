@@ -4,7 +4,7 @@
 import asyncio
 import logging
 import httpx
-from app.config import config
+from services.simulator.app.config import config
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("simulator")
@@ -21,12 +21,16 @@ async def generate_synthetic_orders(client: httpx.AsyncClient):
     # TODO: POST synthetic order payloads to Core API
     pass
 
-async def main():
+async def start_simulator():
     """Main simulation runner executing driver ticks and order generation loops."""
     logger.info("Initializing World Simulator external client runner...")
     async with httpx.AsyncClient(timeout=10.0) as client:
         # TODO: Spawn virtual driver tasks and order generator task
         await asyncio.sleep(0.1)
+
+async def main():
+    """CLI-compatible wrapper for running the simulator outside the unified app."""
+    await start_simulator()
 
 if __name__ == "__main__":
     asyncio.run(main())

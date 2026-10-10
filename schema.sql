@@ -4,6 +4,7 @@
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS citext;
 CREATE EXTENSION IF NOT EXISTS postgis;
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 -- =====================================================================
 -- 2. ENUMS
@@ -138,6 +139,14 @@ CREATE TABLE drivers (
     updated_at  timestamptz   NOT NULL DEFAULT now()
 );
 
+CREATE OR REPLACE FUNCTION generate_tracking_token(n int DEFAULT 10)
+RETURNS text
+LANGUAGE sql VOLATILE AS $$
+  SELECT string_agg(chr(65 + (get_byte(b, i) % 26)), '')
+  FROM (SELECT gen_random_bytes(n) AS b) t,
+       generate_series(0, n - 1) AS i;
+$$;
+
 CREATE TABLE orders (
     id                  uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
     merchant_id         uuid          NOT NULL REFERENCES merchants(id),
@@ -153,7 +162,7 @@ CREATE TABLE orders (
     window_latest       timestamptz,
     weight_kg           numeric(10,3) NOT NULL CHECK (weight_kg > 0),
     volume_m3           numeric(10,4) NOT NULL CHECK (volume_m3 > 0),
-    tracking_token      text          NOT NULL UNIQUE,
+    tracking_token      text          NOT NULL UNIQUE DEFAULT generate_tracking_token(10),
     created_at          timestamptz   NOT NULL DEFAULT now(),
     updated_at          timestamptz   NOT NULL DEFAULT now(),
     UNIQUE (merchant_id, merchant_order_ref),

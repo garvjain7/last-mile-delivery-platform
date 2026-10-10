@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Set a new LOGIPULSE password.">
+  <title>Reset Password | LOGIPULSE</title>
+  <link rel="stylesheet" href="/shared/css/global.css">
+  <link rel="stylesheet" href="/login/css/login.css">
+</head>
+<body class="login-page">
+  <main class="login-shell">
+    <section class="login-intelligence" aria-label="Platform access overview">
+      <a class="login-brand" href="/">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <span>LOGIPULSE</span>
+      </a>
+
+      <div class="login-intelligence-copy">
+        <p class="eyebrow">Secure operational access</p>
+        <h1>Account Recovery.</h1>
+        <p>
+          Set a new password for your account to regain access to your workspace.
+        </p>
+      </div>
+    </section>
+
+    <section class="login-panel" aria-labelledby="reset-title">
+      <div class="panel-header">
+        <p class="eyebrow">Identity recovery</p>
+        <h2 id="reset-title">Create new password</h2>
+        <p>Please enter your new password below.</p>
+      </div>
+
+      <div id="error-box" class="auth-message auth-error" role="alert"></div>
+      <div id="status-box" class="auth-message auth-status" role="status"></div>
+
+      <form id="reset-form" class="login-form" novalidate>
+        <div class="form-group">
+          <label class="form-label" for="password">New Password</label>
+          <input class="form-input" type="password" id="password" name="password" autocomplete="new-password" minlength="8" required>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="confirm_password">Confirm New Password</label>
+          <input class="form-input" type="password" id="confirm_password" name="confirm_password" autocomplete="new-password" minlength="8" required>
+        </div>
+
+        <button type="submit" class="submit-button" id="reset-submit">Update password</button>
+      </form>
+
+      <div class="access-note">
+        Remembered your password? <a href="/login">Sign in</a>
+      </div>
+    </section>
+  </main>
+
+  <script src="/reset-password/js/reset.js"></script>
+</body>
+</html>

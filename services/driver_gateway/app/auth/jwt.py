@@ -2,7 +2,7 @@
 # JWT authentication and verification helpers for driver client sessions.
 
 from typing import Dict, Any, Optional
-from app.config import config
+from services.driver_gateway.app.config import config
 
 async def verify_driver_jwt(token: str) -> Optional[Dict[str, Any]]:
     """

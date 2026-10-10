@@ -1,0 +1,161 @@
+:root {
+  --workspace-navy: #0f172a;
+  --workspace-charcoal: #1e293b;
+  --workspace-slate: #475569;
+  --workspace-muted: #64748b;
+  --workspace-line: #dbe3ee;
+  --workspace-emerald: #10b981;
+}
+
+body {
+  background: #f8fafc;
+}
+
+.workspace-shell {
+  min-height: 100vh;
+}
+
+.workspace-header {
+  border-bottom: 1px solid var(--workspace-line);
+  background: #ffffff;
+}
+
+.workspace-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  max-width: 1180px;
+  min-height: 72px;
+  margin: 0 auto;
+  padding: 0 28px;
+}
+
+.workspace-brand {
+  color: var(--workspace-navy);
+  font-weight: 900;
+  letter-spacing: 0.08em;
+}
+
+.workspace-nav a {
+  color: var(--workspace-slate);
+  font-weight: 800;
+}
+
+.workspace-main {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 72px 28px;
+}
+
+.workspace-kicker {
+  margin-bottom: 12px;
+  color: #047857;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.workspace-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 0.7fr);
+  gap: 32px;
+  align-items: stretch;
+}
+
+.workspace-copy,
+.workspace-panel,
+.workspace-card {
+  border: 1px solid var(--workspace-line);
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.workspace-copy {
+  padding: clamp(28px, 5vw, 52px);
+}
+
+.workspace-copy h1 {
+  max-width: 780px;
+  margin: 0;
+  color: var(--workspace-navy);
+  font-size: clamp(36px, 5vw, 58px);
+  line-height: 1.05;
+}
+
+.workspace-copy p {
+  max-width: 740px;
+  margin-top: 20px;
+  color: var(--workspace-slate);
+  font-size: 16px;
+  line-height: 1.7;
+}
+
+.workspace-panel {
+  padding: 28px;
+}
+
+.workspace-panel h2 {
+  margin: 0 0 18px;
+  color: var(--workspace-navy);
+  font-size: 20px;
+}
+
+.workspace-list {
+  display: grid;
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.workspace-list li {
+  position: relative;
+  padding-left: 20px;
+  color: var(--workspace-charcoal);
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+.workspace-list li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 8px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--workspace-emerald);
+}
+
+.workspace-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+  margin-top: 24px;
+}
+
+.workspace-card {
+  padding: 22px;
+}
+
+.workspace-card span {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--workspace-muted);
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.workspace-card strong {
+  color: var(--workspace-navy);
+  font-size: 20px;
+}
+
+@media (max-width: 860px) {
+  .workspace-hero,
+  .workspace-grid {
+    grid-template-columns: 1fr;
+  }
+}

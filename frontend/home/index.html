@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lastmile</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Hanken+Grotesk:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="/css/home.css">
+</head>
+<body>
+
+<header class="wrap nav">
+  <a href="#top" class="logo">
+    <svg width="30" height="30" viewBox="0 0 30 30" fill="none" aria-hidden="true"><circle cx="6" cy="23" r="3.5" fill="#F2C230"/><circle cx="24" cy="7" r="3.5" fill="#0E5A45"/><path d="M6 23 C 6 11, 20 21, 24 7" stroke="#0E5A45" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="1 5"/></svg>
+    Lastmile
+  </a>
+  <nav class="nav-links">
+    <a href="#how">How it works</a>
+    <a href="#start">Who it's for</a>
+    <a href="/login">Log in</a>
+    <a href="/register" class="btn btn-solid btn-pill">Sign up</a>
+  </nav>
+</header>
+
+<main>
+
+<section id="top" class="wrap hero">
+  <div class="hero-copy">
+    <h1>See exactly where your parcel is.</h1>
+    <p class="lead">Enter your tracking code to follow your delivery from our warehouse to your door.</p>
+    <form id="track-form" class="track" novalidate>
+      <label for="code">Tracking code</label>
+      <div class="track-row">
+        <input id="code" name="code" type="text" placeholder="Example: LM-48213" autocomplete="off">
+        <button type="submit" class="btn btn-solid btn-rect">Track parcel</button>
+      </div>
+      <p id="track-error" class="field-error" role="alert" hidden></p>
+    </form>
+    <p class="small">Have an account? <a href="/login">Log in</a> to see all your orders in one place.</p>
+  </div>
+
+  <div class="hero-visual">
+    <svg class="route" viewBox="0 0 480 250" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+      <path d="M40 210 C 110 120, 170 230, 240 140 S 380 60, 440 40" fill="none" stroke="#F2C230" stroke-width="3" stroke-dasharray="2 9" stroke-linecap="round"/>
+      <circle cx="40" cy="210" r="8" fill="#F2C230"/>
+      <text x="56" y="238" fill="#CFE3DA" font-size="15">Warehouse</text>
+      <circle cx="440" cy="40" r="8" fill="#fff"/>
+      <text x="424" y="26" text-anchor="end" fill="#CFE3DA" font-size="15">You</text>
+      <circle class="van" cx="0" cy="0" r="7" fill="#fff" stroke="#F2C230" stroke-width="3"/>
+    </svg>
+
+    <div class="card">
+      <div class="muted">Example tracking view</div>
+      <div class="card-head">
+        <div class="card-title">Parcel LM-48213</div>
+        <div class="chip">Out for delivery</div>
+      </div>
+      <div class="muted-lg">Arriving today, around 2:30 pm</div>
+      <ol class="steps">
+        <li class="done"><span class="dot"></span><div class="step-body"><span>Order placed</span><span class="muted">10:12 am</span></div></li>
+        <li class="done"><span class="dot"></span><div class="step-body"><span>Packed at the warehouse</span><span class="muted">11:40 am</span></div></li>
+        <li class="now"><span class="dot"></span><div class="step-body"><div class="step-line"><b>Out for delivery</b><span class="muted">1:05 pm</span></div><div class="muted sm">2 stops before yours</div></div></li>
+        <li class="next"><span class="dot"></span><div class="step-body muted"><span>Delivered</span><span>Expected 2:30 pm</span></div></li>
+      </ol>
+    </div>
+  </div>
+</section>
+
+<section id="how" class="band">
+  <div class="wrap section">
+    <div class="section-head">
+      <h2>How a delivery works</h2>
+      <p class="lead">Four steps, and you can follow every one of them.</p>
+    </div>
+    <div class="how-grid">
+      <div class="how-step"><div class="how-top"><span class="num">1</span><span class="dots"></span></div><h3>Order placed</h3><p>Your seller confirms the order, and we send it to the warehouse closest to you.</p></div>
+      <div class="how-step"><div class="how-top"><span class="num">2</span><span class="dots"></span></div><h3>Packed and assigned</h3><p>The warehouse prepares your parcel and puts it on a driver's route for the day.</p></div>
+      <div class="how-step"><div class="how-top"><span class="num">3</span><span class="dots"></span></div><h3>On the way</h3><p>Follow your delivery as it moves, and see how many stops are left before yours.</p></div>
+      <div class="how-step"><div class="how-top"><span class="num num-last">4</span></div><h3>Delivered</h3><p>You get a confirmation. If we couldn't reach you, we tell you what happens next.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="start" class="wrap start">
+  <h2>Where would you like to start?</h2>
+  <div class="paths">
+    <div class="path">
+      <h3>I'm waiting for a parcel</h3>
+      <p>Track any order with its code, or create an account to see all your orders in one place.</p>
+      <a href="/register" class="btn btn-solid btn-pill">Create an account</a>
+    </div>
+    <div class="path">
+      <h3>I send parcels for my business</h3>
+      <p>See every order you've handed us and where it stands. Business accounts are set up by our team.</p>
+      <a href="/login" class="btn btn-outline btn-pill">Log in to your business account</a>
+    </div>
+    <div class="path">
+      <h3>I want to deliver</h3>
+      <p>Apply to join our drivers. Our team reviews every application before you can start.</p>
+      <a href="/register?role=driver" class="btn btn-outline btn-pill">Apply as a driver</a>
+    </div>
+  </div>
+</section>
+
+<section class="wrap cta-wrap">
+  <div class="cta">
+    <div>
+      <h2>Got a tracking code?</h2>
+      <p>Find your parcel in a few seconds.</p>
+    </div>
+    <a href="#top" id="cta-track" class="btn btn-yellow btn-rect">Track a parcel</a>
+  </div>
+</section>
+
+</main>
+
+<footer>
+  <div class="wrap foot">
+    <div><span class="foot-name">Lastmile</span><br><span>&copy; 2026 Lastmile. All rights reserved.</span></div>
+    <div class="foot-links"><a href="/login">Log in</a><a href="/register">Sign up</a><span>Need help? [SUPPORT EMAIL]</span></div>
+  </div>
+</footer>
+
+<script src="/js/home.js"></script>
+</body>
+</html>
