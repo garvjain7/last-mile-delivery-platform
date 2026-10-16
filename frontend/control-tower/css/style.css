@@ -1,0 +1,33 @@
+/* Styling and layout design system for Control Tower dispatcher dashboard UI. */
+/* Modern layout styles for live map view and fleet state sidebar. */
+
+body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background-color: #0f172a;
+    color: #f8fafc;
+}
+
+header {
+    padding: 1rem 2rem;
+    background-color: #1e293b;
+    border-bottom: 1px solid #334155;
+}
+
+main {
+    display: flex;
+    height: calc(100vh - 70px);
+}
+
+#map-container {
+    flex: 1;
+    background-color: #0f172a;
+}
+
+#fleet-sidebar {
+    width: 320px;
+    background-color: #1e293b;
+    border-left: 1px solid #334155;
+    padding: 1rem;
+    overflow-y: auto;
+}
