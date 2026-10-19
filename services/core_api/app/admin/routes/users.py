@@ -7,9 +7,10 @@ import uuid as _uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Literal, Optional
 
-from fastapi import APIRouter, Depends, Path, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import case, delete, func, or_, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -57,6 +58,7 @@ from services.core_api.app.auth.security import (
     hash_password,
     hash_reset_token,
 )
+from services.core_api.app.auth.service import acquire_email_cooldown, is_email_unique_violation
 from services.core_api.app.database.connection import get_db_session
 
 logger = logging.getLogger(__name__)
@@ -392,8 +394,7 @@ async def invite_user(
 
     existing = await db.scalar(select(User).where(User.email == body.email))
     if existing is not None:
-        raise _409("An account with this email already exists.", "email_exists",
-                   {"user_id": str(existing.id)})
+        raise HTTPException(status_code=409, detail={"error": "email_taken"})
 
     for wid in warehouse_ids:
         wh = await db.scalar(select(Warehouse).where(Warehouse.id == wid, Warehouse.is_active == True))
@@ -407,7 +408,13 @@ async def invite_user(
         full_name=body.full_name,
     )
     db.add(user)
-    await db.flush()
+    try:
+        await db.flush()
+    except IntegrityError as exc:
+        await db.rollback()
+        if is_email_unique_violation(exc):
+            raise HTTPException(status_code=409, detail={"error": "email_taken"}) from exc
+        raise
 
     role_enum = UserRole(body.role)
     db.add(UserRole_(user_id=user.id, role=role_enum, granted_by=actor.id))
@@ -647,6 +654,9 @@ async def send_reset(
     if not u.is_active:
         raise _err(400, "User is not active.", "invalid_state")
 
+    if not await acquire_email_cooldown("admin-reset", uid):
+        raise HTTPException(status_code=429, detail="Email cooldown active.", headers={"Retry-After": "60"})
+
     now = datetime.now(timezone.utc)
     await db.execute(
         update(PasswordResetToken)
@@ -706,6 +716,9 @@ async def resend_invite(
     )).scalar_one()
     if u.last_login_at is not None or inv_count == 0:
         raise _409("User is not in invited state.", "invalid_state")
+
+    if not await acquire_email_cooldown("admin-invite", uid):
+        raise HTTPException(status_code=429, detail="Email cooldown active.", headers={"Retry-After": "60"})
 
     raw_token = await _issue_invite_token(u, db)
 

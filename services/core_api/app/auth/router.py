@@ -66,6 +66,8 @@ async def register_customer(
     try:
         await service.register_user(payload, "customer", db)
         return schemas.RegistrationResponse(redirect_to="/login")
+    except service.EmailTakenError:
+        raise HTTPException(status_code=409, detail={"error": "email_taken"})
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
 
@@ -83,6 +85,8 @@ async def register_driver(
     try:
         await service.register_user(payload, "driver", db)
         return schemas.RegistrationResponse(redirect_to="/login")
+    except service.EmailTakenError:
+        raise HTTPException(status_code=409, detail={"error": "email_taken"})
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
 
@@ -119,8 +123,13 @@ async def login(
     status_code=status.HTTP_200_OK,
     summary="Log out by clearing auth cookies",
 )
-async def logout(response: Response) -> dict:
+async def logout(
+    response: Response,
+    refresh_token: Optional[str] = Cookie(None),
+    db: AsyncSession = Depends(get_db_session),
+) -> dict:
     """Clear access and refresh cookies."""
+    await service.revoke_refresh_token(refresh_token, db)
     _clear_auth_cookies(response)
     return {"detail": "Logged out successfully"}
 
@@ -161,7 +170,7 @@ async def refresh(
 
 @router.post(
     "/forgot-password",
-    status_code=status.HTTP_202_ACCEPTED,
+    status_code=status.HTTP_200_OK,
     summary="Request a password-reset link via email",
 )
 async def forgot_password(

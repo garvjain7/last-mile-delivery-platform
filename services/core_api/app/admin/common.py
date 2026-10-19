@@ -116,11 +116,8 @@ async def _revoke_all_tokens(user: User, db: AsyncSession) -> None:
     now = datetime.now(timezone.utc)
     await db.execute(
         update(RefreshToken)
-        .where(
-            RefreshToken.user_id == user.id,
-            RefreshToken.revoked_at.is_(None),
-        )
-        .values(revoked_at=now)
+        .where(RefreshToken.user_id == user.id)
+        .values(revoked_at=now, rotated_at=None)
     )
 
 

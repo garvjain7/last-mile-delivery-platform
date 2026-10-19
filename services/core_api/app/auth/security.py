@@ -104,21 +104,25 @@ _ROLE_PRIORITY = ["admin", "dispatcher", "fleet_manager", "merchant", "driver", 
 # Where each role lands after login. Endpoints are canonical future paths —
 # frontend enforces these, backend only sends the advisory string.
 _ROLE_REDIRECT: Dict[str, str] = {
-    "admin":         "/admin",
-    "dispatcher":    "/dispatcher",
+    "admin": "/admin",
+    "dispatcher": "/dispatcher",
     "fleet_manager": "/fleet-manager",
-    "merchant":      "/merchant",
-    "driver":        "/driver",
-    "customer":      "/track",
+    "merchant": "/merchant",
+    "driver": "/driver",
+    "customer": "/users/{user_id}",
 }
 
 
-def redirect_for_roles(roles: List[str]) -> str:
+def redirect_for_roles(roles: List[str], user_id: Optional[str] = None) -> str:
     """Return the mapped path for the highest-priority role or raise if unmapped."""
     unknown_roles = [role for role in roles if role not in _ROLE_REDIRECT]
     if unknown_roles:
         raise ValueError(f"No redirect mapping for role: {unknown_roles[0]}")
     for role in _ROLE_PRIORITY:
         if role in roles:
+            if role == "customer":
+                if not user_id:
+                    raise ValueError("Customer redirect requires a user id.")
+                return _ROLE_REDIRECT[role].format(user_id=user_id)
             return _ROLE_REDIRECT[role]
     raise ValueError("No redirect mapping for the user's roles.")

@@ -255,14 +255,24 @@ export function createDriversPage({ api, onToast, route }) {
       await api.post(`/api/admin/drivers/${encodeURIComponent(driver.user_id)}/${action}`, {});
       onToast(action === 'verify' ? `${driver.full_name} verified and set to offline.` : `${driver.full_name} rejected.`);
       state.selected.delete(driver.user_id); await load(); await refreshOpenDrawer();
-    } catch (error) { onToast(error.message || 'The driver action could not be completed.', 'error'); }
+    } catch (error) {
+      const target = action === 'verify' ? 'offline' : 'rejected';
+      if (error.status === 409 && error.code === 'invalid_state' && error.current === target) {
+        onToast(action === 'verify' ? `${driver.full_name} verified and set to offline.` : `${driver.full_name} rejected.`);
+        state.selected.delete(driver.user_id); await load(); await refreshOpenDrawer();
+      } else onToast(error.message || 'The driver action could not be completed.', 'error');
+    }
   }
   async function rejectOne(driver) {
     const reason = await reasonDialog(); if (reason === null) return;
     try {
       await api.post(`/api/admin/drivers/${encodeURIComponent(driver.user_id)}/reject`, { reason: reason || null });
       onToast(`${driver.full_name} rejected.`); state.selected.delete(driver.user_id); await load(); await refreshOpenDrawer();
-    } catch (error) { onToast(error.message || 'The driver could not be rejected.', 'error'); }
+    } catch (error) {
+      if (error.status === 409 && error.code === 'invalid_state' && error.current === 'rejected') {
+        onToast(`${driver.full_name} rejected.`); state.selected.delete(driver.user_id); await load(); await refreshOpenDrawer();
+      } else onToast(error.message || 'The driver could not be rejected.', 'error');
+    }
   }
   async function changeAccess(driver) {
     const block = driver.account_active;

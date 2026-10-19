@@ -1,67 +1,64 @@
-<!-- Status snapshot documenting verified implementation state across repository components. -->
-<!-- Regenerated on request based on actual code inspection — not a design document. -->
-# Repository Current State Snapshot
+# Current Repository State
 
-This document provides a factual, code-verified status snapshot of all services, database schemas, API flows, and execution loops in the repository as of today.
+**Reviewed:** 2026-10-19
+**Purpose:** Factual snapshot of what the checked-in application currently exposes and implements. Planned behavior is identified separately in [API_CONTRACTS.md](API_CONTRACTS.md).
 
----
+## Service boundaries
 
-## Service Status
+| Component | Current responsibility | Implementation state |
+| --- | --- | --- |
+| Core API (`services/core_api`) | Public pages, authentication, customer order APIs, tracking, staff endpoints, admin API, role-gated panels | Authentication, public tracking, admin management, customer order reads, claims, and order creation have database-backed implementations. Minimal staff endpoints remain stubs. |
+| Routing Worker (`services/routing_worker`) | Intended order routing and terminal delivery-event processing | Entrypoint exists, but consumer startup and processing are TODOs; `main()` exits after a short delay. |
+| Control Tower (`services/control_tower`) | Intended live fleet state, WebSocket feed, and rescue trigger | FastAPI routes exist; Redis telemetry processing and rescue behavior are incomplete/stubbed. |
+| Driver Gateway (`services/driver_gateway`) | Stateless driver authentication and event ingestion | Validates HS256 driver-role JWTs and appends validated driver events to Redis Streams; it does not access Postgres. |
+| Simulator (`services/simulator`) | External client for order and driver traffic | Entrypoint exists; order generation and driver simulation are TODOs, and `main()` exits after a short delay. |
+| Frontend | Public pages, admin console, control-tower dashboard, driver app, and role panels | Static HTML/CSS/JS is used. Admin has separate HTML files and JS modules. |
 
-- **`core-api`**: **STUBBED** — Application entrypoint, routers, and configuration loaders are initialized and compile cleanly. `/health/live` is WORKING. `/health/ready` is STUBBED. `POST /orders` returns a hardcoded mock JSON response (`ord-stub-123`); address geocoding, PostGIS KNN facility assignment, Postgres persistence, and `orders_stream` event publishing are stubbed with `# TODO`. Admin endpoints (`GET /staff/orders`, `POST /staff/orders/{id}/unstick`) return empty arrays/hardcoded JSON stubs.
-- **`routing-worker`**: **STUBBED** — Process entrypoint and engine client classes (`OSRMClient`, `VROOMClient`) are initialized. Both `orders_stream` solver consumer loop and `driver_events_stream` terminal events consumer loop are signature-only stubs containing `# TODO` blocks. OSRM and VROOM HTTP requests and response matrix parsing return empty mock dicts (`{"durations": [], "distances": []}`).
-- **`control-tower`**: **STUBBED** — Application entrypoint, config loader, and WebSocket connection manager are initialized. `/health/live` is WORKING. Telemetry stream consumer loop (`run_telemetry_consumer`) is a signature stub. Redis Hash state manager (`FleetStateManager`) methods (`HSET`/`HGETALL`) are signature stubs containing `# TODO`. WebSocket `/ws/fleet` loop and `POST /rescue/{vehicle_id}` return stub responses.
-- **`driver-gateway`**: **STUBBED** — Application entrypoint, fail-fast JWT config validation, and MinIO client wrapper are initialized. `/health/live` is WORKING. `/health/ready` is STUBBED. JWT verification (`verify_driver_jwt`) returns a mock dict (`{"driver_id": "drv-stub-123"}`). Ingestion route `POST /driver/events` returns a hardcoded `202 Accepted` response without executing `XADD` to `driver_events_stream`. MinIO POD upload returns a mock URL string.
-- **`simulator`**: **STUBBED** — Process entrypoint and configuration loader are initialized. Driver simulation (`simulate_driver`) and order generation (`generate_synthetic_orders`) loop functions are signature stubs containing `# TODO`.
-- **`frontend/control-tower`**: **STUBBED** — `index.html` structure, dark-mode CSS styling, and `js/app.js` WebSocket connection skeleton are created. DOM updates and map element rendering are signature stubs.
-- **`frontend/driver-app`**: **STUBBED** — `index.html` mobile layout, touch CSS styling, PWA service worker (`sw.js`), and `js/app.js` client are created. IndexedDB local durable queue and event replay routines are signature stubs.
+The repository's unified application entrypoint is `services/app.py`. The individual service apps also have their own entrypoints. The routing worker and simulator are processes, not ASGI applications.
 
----
+## Implemented HTTP surface
 
-## Schema Status
+### Core API
 
-**State**: **DRAFT, NOT FINALIZED.**
+- Public HTML: `GET /`, `/login`, `/register`, `/reset-password`, `/track`.
+- Auth: `POST /auth/register/customer`, `/auth/register/driver`, `/auth/login`, `/auth/logout`, `/auth/refresh`, `/auth/forgot-password`, `/auth/reset-password`; `GET /auth/me`.
+- Public tracking data: `GET /api/track/{code}` (database lookup; rate limited; unknown codes return the same 404 contract).
+- Orders: `POST /orders/` creates an unclaimed integration order; authenticated customers create through `POST /api/users/{user_id}/request`. Both persist the order and initial event, then publish after commit.
+- Staff: `GET /staff/orders` currently returns an empty list; `POST /staff/orders/{order_id}/unstick` currently returns a stub result.
+- Admin API: all admin endpoints are under `/api/admin`; see [API_CONTRACTS.md](API_CONTRACTS.md). The shared router applies admin authorization and CSRF checks.
+- Role panels: `/admin` and its seven named HTML pages; `/merchant`, `/dispatcher`, `/fleet-manager`, `/driver`. Page and asset requests are gated against the current user and role in Postgres. The public tracking page and tracking data endpoint require no login.
+- Customer panels: `/users/{user_id}`, `/users/{user_id}/orders/{order_id}`, and `/users/{user_id}/request` require the matching customer identity. The separate `/users/{user_id}/orders` page route is not implemented. Customer overview, order list/detail, active-seller lookup, reverse geocoding, and order-claim APIs are under `/api/users/{user_id}` and return no-store responses.
+- Health: `GET /health`, `/health/live`, `/health/ready`. Core API readiness checks Postgres and Redis; startup also executes `SELECT 1` and logs connection/query timings.
 
-The SQLAlchemy database models in `db_models/models.py` currently represent a draft placeholder. **The model definition files need a major update once the Postgres/PostGIS schema is finalized**, and developers/agents modifying this package **must read and remember `AGENTS.md` to follow every rule**.
+### Other service APIs
 
-Open schema questions currently marked as TODOs/draft types in `db_models/models.py` and `db/migrations/`:
-- `Facility.location` is currently mapped as a plain `String` instead of PostGIS `GEOGRAPHY(POINT)` with spatial GiST indexing.
-- `Order.dropoff_location` is currently mapped as a plain `String` instead of PostGIS `GEOGRAPHY(POINT)`.
-- `Driver.current_location` is currently mapped as a plain `String` instead of PostGIS `GEOGRAPHY(POINT)`.
-- `Order.time_window` is currently mapped as a plain `String` pending exact Postgres timestamp range / DDL constraint definition.
-- Status fields across `Order`, `Driver`, `Route`, and `RouteStop` are mapped as plain `String` without database-level Postgres ENUM type definitions.
-- Foreign key cascade behaviors (`ondelete="CASCADE"` vs `SET NULL`) and explicit index names are unconfirmed.
-- `db/migrations/` contains package initialization only; no numbered Alembic/SQL schema migration files exist yet.
+- Control Tower: `GET /health/live`, `/health/ready`; WebSocket `/ws/fleet`; `POST /rescue/{vehicle_id}`. Readiness currently returns a static ready response; telemetry and rescue processing are incomplete.
+- Driver Gateway: `POST /driver/events`; `GET /health/live`, `/health/ready`. The event route validates the shared driver JWT and publishes telemetry and `route.started` to `driver_events_stream`; readiness is static.
+- Unified application (`services/app.py`): `GET /status`, `/status/data`, `/health`, `/health/live`, `/health/ready`. The status page reads the current mounted-service, task, Postgres, and Redis state when requested. The unified `/health/ready` response is not a substitute for the Core API dependency check.
 
----
+## Data and processing state
 
-## Open Questions
+- `schema.sql` is the authoritative Postgres DDL, including PostGIS types, enums, constraints, and indexes. `db_models/models.py` is the ORM mapping used by Core API and Routing Worker; schema changes must keep it aligned with `schema.sql`.
+  - Core API auth, admin management, public tracking, customer order reads/claims, and customer order creation use the database. Order creation geocodes the submitted delivery address through configured Nominatim, writes a `placed` order with no warehouse plus its initial event in one transaction, then publishes `order.created`. Warehouse selection is reserved for the later merchant handoff; the eligibility policy is still open.
+  - Redis Streams are the event backbone. Core API publishes `order.created` to `orders_stream` after commit; Driver Gateway publishes validated events to `driver_events_stream`; the worker consumers and Control Tower telemetry consumer do not yet complete the processing loop.
+- Consequently, the full order → route → driver event → persisted delivery → live dashboard loop is not operational end to end.
+- Control Tower, Driver Gateway, and Simulator must not acquire Postgres access; Routing Worker is intended to own route and terminal delivery-event persistence.
 
-`OPEN_QUESTIONS.md` does not exist; no open questions logged.
+## Order intake decisions
 
----
+Customer order creation accepts seller, recipient name and phone, delivery address, parcel weight and volume, and an optional complete delivery window. Customer identity comes from the authenticated session. The configured Nominatim-compatible endpoint geocodes submitted addresses and reverse-geocodes coordinates for the request form. In line with the authoritative end-to-end lifecycle in `docs/end-to-end-system-flow.md`, Core API creates the order at `placed` with `warehouse_id = NULL`; order and initial `placed` event commit atomically, then Core API publishes `order.created` to `orders_stream`. Warehouse selection happens during the future merchant handoff, and its eligibility policy remains open. A publish failure is logged without undoing the committed order. Apply migrations `2026_10_19_01_order_status_values.sql` and then `2026_10_19_02_order_handoff_columns.sql` before deploying this code to an existing database.
 
-## End-to-End Status
+## Frontend and panel serving
 
-**Can an order currently go: created → routed → assigned to a driver → tracked live → marked delivered, for real, right now?**
+- Public pages are in `frontend/public/<page>/`; shared assets are in `frontend/shared/`.
+- Admin's separate page files and assets are in `frontend/core-api/admin/`. Other role panels are in `frontend/core-api/<role>/`.
+- `services/core_api/app/panels.py` serves panel files through role checks. The `frontend/core-api/` tree must not be exposed through a general static mount.
+- Control Tower and Driver App frontends remain in `frontend/control-tower/` and `frontend/driver-app/`.
 
-**NO.** The end-to-end processing chain breaks at the very first step:
-1. **Order Creation (Breaks at Step 1)**: `POST /orders` on `core-api` returns a hardcoded mock JSON response without geocoding, without performing a PostGIS KNN facility lookup, without writing to Postgres, and without appending an `order.created` event to `orders_stream`.
-2. **Routing (Breaks at Step 2)**: `routing-worker` consumer loop does not read `orders_stream`, does not call OSRM/VROOM, and does not write published routes to Postgres or `routes_stream`.
-3. **Driver Telemetry (Breaks at Step 3)**: `driver-gateway` endpoint `POST /driver/events` returns a mock acceptance response without publishing to `driver_events_stream`.
-4. **Live Monitoring (Breaks at Step 4)**: `control-tower` telemetry consumer loop does not read `driver_events_stream`, does not mutate Redis Hashes (`fleet:driver:active:{driver_id}`), and does not broadcast WebSocket position deltas to the dashboard UI.
-5. **Delivery Attempt Persistence (Breaks at Step 5)**: `routing-worker` terminal events consumer loop does not check `processed_event` or record `delivery_attempt` rows in Postgres.
+## Run/deployment configuration caveat
 
----
+The Render blueprint starts the Routing Worker and Simulator with `python -m` because they are runnable processes with `main()` and no ASGI `app`. The Core API, Control Tower, and Driver Gateway expose ASGI apps.
 
-## Local Dev Status
+## Verification scope
 
-- **`docker-compose up` Configuration**: **VERIFIED VALID.** Dockerfile build contexts, container images (`postgis/postgis:15-3.3`, `redis:7.2-alpine`, `osrm/osrm-backend:v5.27.1`, `vroomexpress/vroom-docker:v1.13.0`, `minio/minio`, `nominatim:4.2`), and service port mappings are correctly configured and build without syntax errors.
-- **Python Virtual Environment**: Fully created under `venv/` with all service dependencies installed and verified clean (`SUCCESS: ALL DEPENDENCIES LOADED`).
-
----
-
-## Last Verified
-
-**Date**: 2026-09-27  
-**Note**: This file is fully regenerated on request based on actual codebase inspection and is never hand-patched.
+This document records source inspection, not a claim that external services (Postgres, Redis, Neon, Render, MinIO, OSRM, VROOM, or Nominatim) are reachable. Runtime behavior depends on their configured environment and availability.

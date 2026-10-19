@@ -7,11 +7,12 @@ const SAFE_DETAIL_CODES = new Set([
 ]);
 
 export class ApiError extends Error {
-  constructor(message, status, code = null) {
+  constructor(message, status, code = null, current = null) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
     this.code = code;
+    this.current = current;
   }
 }
 
@@ -31,7 +32,40 @@ function messageFor(status, payload) {
   return 'The request could not be completed. Try again.';
 }
 
+async function refreshSession() {
+  const refresh = async () => {
+    try {
+      const response = await fetch('/auth/refresh', {
+        method: 'POST',
+        headers: { Accept: 'application/json' },
+        credentials: 'same-origin'
+      });
+      return response.ok;
+    } catch {
+      return false;
+    }
+  };
+
+  if (navigator.locks?.request) {
+    return navigator.locks.request('auth-refresh', refresh);
+  }
+  return refresh();
+}
+
+let submitterForRequest = null;
+document.addEventListener('submit', (event) => {
+  submitterForRequest = event.submitter || null;
+  const submitted = submitterForRequest;
+  queueMicrotask(() => {
+    if (submitterForRequest === submitted) submitterForRequest = null;
+  });
+}, true);
+
 export async function requestJson(path, options = {}) {
+  const submitter = submitterForRequest;
+  submitterForRequest = null;
+  if (submitter) submitter.disabled = true;
+
   const headers = new Headers(options.headers || {});
   headers.set('Accept', 'application/json');
   const init = {
@@ -44,33 +78,47 @@ export async function requestJson(path, options = {}) {
     init.body = JSON.stringify(options.body);
   }
 
-  let response;
   try {
-    response = await fetch(path, init);
-  } catch {
-    throw new ApiError('Unable to reach the service. Check your connection and retry.', 0);
-  }
+    let response;
+    try {
+      response = await fetch(path, init);
+    } catch {
+      throw new ApiError('Unable to reach the service. Check your connection and retry.', 0);
+    }
 
-  if (response.status === 401) {
-    goToLogin();
-    throw new ApiError('Your session has expired. Sign in again.', 401, 'unauthenticated');
-  }
+    if (response.status === 401 && path !== '/auth/refresh') {
+      if (await refreshSession()) {
+        try {
+          response = await fetch(path, init);
+        } catch {
+          throw new ApiError('Unable to reach the service. Check your connection and retry.', 0);
+        }
+      }
+    }
 
-  let payload = null;
-  try {
-    payload = await response.json();
-  } catch {
-    payload = null;
-  }
+    if (response.status === 401) {
+      goToLogin();
+      throw new ApiError('Your session has expired. Sign in again.', 401, 'unauthenticated');
+    }
 
-  if (response.status === 403) {
-    throw new ApiError('You don’t have permission for this action.', 403, payload?.code || 'forbidden');
+    let payload = null;
+    try {
+      payload = await response.json();
+    } catch {
+      payload = null;
+    }
+
+    if (response.status === 403) {
+      throw new ApiError('You don’t have permission for this action.', 403, payload?.code || 'forbidden', payload?.current || null);
+    }
+    if (!response.ok) {
+      throw new ApiError(messageFor(response.status, payload), response.status, payload?.code || null, payload?.current || null);
+    }
+    if (payload === null) throw new ApiError('The service returned an unreadable response. Retry in a moment.', 502);
+    return payload;
+  } finally {
+    if (submitter) submitter.disabled = false;
   }
-  if (!response.ok) {
-    throw new ApiError(messageFor(response.status, payload), response.status, payload?.code || null);
-  }
-  if (payload === null) throw new ApiError('The service returned an unreadable response. Retry in a moment.', 502);
-  return payload;
 }
 
 export async function postJson(path, body = {}) {

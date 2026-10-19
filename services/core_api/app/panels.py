@@ -18,6 +18,7 @@ from sqlalchemy.orm import selectinload
 from db_models.models import User
 from services.core_api.app.admin.security import ADMIN_SECURITY_HEADERS
 from services.core_api.app.auth.security import decode_access_token
+from services.core_api.app.auth.dependencies import resolve_self_customer
 from services.core_api.app.database.connection import get_db_session
 
 router = APIRouter()
@@ -103,6 +104,94 @@ async def serve_panel_asset(
     except ValueError:
         return Response(status_code=404, headers=ADMIN_SECURITY_HEADERS)
     return await serve_panel(role, asset_file, request, access_token, db)
+
+
+async def serve_customer_panel(
+    file: Path,
+    request: Request,
+    access_token: Optional[str],
+    db: AsyncSession,
+    user_id: Optional[str] = None,
+) -> Response:
+    """Serve a customer page or asset only to the matching active customer."""
+    if not access_token:
+        return RedirectResponse(
+            url=f"/login?next={quote(request.url.path, safe='/')}",
+            status_code=302,
+            headers=ADMIN_SECURITY_HEADERS,
+        )
+    try:
+        decode_access_token(access_token)
+        path_user_id = uuid.UUID(user_id) if user_id is not None else None
+    except (JWTError, ValueError, TypeError, AttributeError):
+        return RedirectResponse(
+            url=f"/login?next={quote(request.url.path, safe='/')}",
+            status_code=302,
+            headers=ADMIN_SECURITY_HEADERS,
+        )
+    customer = await resolve_self_customer(path_user_id, access_token, db)
+    if customer is None:
+        return Response(status_code=404, headers=ADMIN_SECURITY_HEADERS)
+    if not file.is_file():
+        return Response(status_code=404, headers=ADMIN_SECURITY_HEADERS)
+    return FileResponse(file, headers=ADMIN_SECURITY_HEADERS)
+
+
+@router.get("/users/assets/{asset_path:path}", include_in_schema=False)
+async def customer_panel_asset(
+    asset_path: str,
+    request: Request,
+    access_token: Optional[str] = Cookie(None),
+    db: AsyncSession = Depends(get_db_session),
+) -> Response:
+    customer_root = (PANEL_ROOT / "customer").resolve()
+    asset_file = (customer_root / asset_path).resolve()
+    try:
+        asset_file.relative_to(customer_root)
+    except ValueError:
+        return Response(status_code=404, headers=ADMIN_SECURITY_HEADERS)
+    return await serve_customer_panel(asset_file, request, access_token, db)
+
+
+@router.get("/users/{user_id}/orders/{order_id}", include_in_schema=False)
+async def customer_order_page(
+    user_id: str,
+    order_id: str,
+    request: Request,
+    access_token: Optional[str] = Cookie(None),
+    db: AsyncSession = Depends(get_db_session),
+) -> Response:
+    return await serve_customer_panel(PANEL_ROOT / "customer" / "order.html", request, access_token, db, user_id)
+
+
+@router.get("/users/{user_id}/orders", include_in_schema=False)
+async def customer_orders_page(
+    user_id: str,
+    request: Request,
+    access_token: Optional[str] = Cookie(None),
+    db: AsyncSession = Depends(get_db_session),
+) -> Response:
+    return await serve_customer_panel(PANEL_ROOT / "customer" / "orders.html", request, access_token, db, user_id)
+
+
+@router.get("/users/{user_id}/request", include_in_schema=False)
+async def customer_request_page(
+    user_id: str,
+    request: Request,
+    access_token: Optional[str] = Cookie(None),
+    db: AsyncSession = Depends(get_db_session),
+) -> Response:
+    return await serve_customer_panel(PANEL_ROOT / "customer" / "request.html", request, access_token, db, user_id)
+
+
+@router.get("/users/{user_id}", include_in_schema=False)
+async def customer_home_page(
+    user_id: str,
+    request: Request,
+    access_token: Optional[str] = Cookie(None),
+    db: AsyncSession = Depends(get_db_session),
+) -> Response:
+    return await serve_customer_panel(PANEL_ROOT / "customer" / "index.html", request, access_token, db, user_id)
 
 
 @router.get("/admin/assets/{asset_path:path}", include_in_schema=False)

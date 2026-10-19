@@ -7,6 +7,7 @@
 <title>Track your parcel | Lastmile</title>
 <link rel="stylesheet" href="/static/home/css/landing.css">
 <link rel="stylesheet" href="/static/track/css/track.css">
+<link rel="stylesheet" href="/static/shared/css/customer-account.css">
 </head>
 <body>
 
@@ -17,8 +18,7 @@
   </a>
   <nav class="nav-links">
     <a href="/">Home</a>
-    <a href="/login">Log in</a>
-    <a href="/register" class="btn btn-solid btn-pill">Sign up</a>
+    <div id="track-account-actions" aria-live="polite"></div>
   </nav>
 </header>
 
@@ -68,10 +68,9 @@
 <footer>
   <div class="wrap foot">
     <div><span class="foot-name">Lastmile</span><br><span>&copy; 2026 Lastmile. All rights reserved.</span></div>
-    <div class="foot-links"><a href="/login">Log in</a><a href="/register">Sign up</a></div>
   </div>
 </footer>
 
-<script src="/static/track/js/track.js"></script>
+<script type="module" src="/static/track/js/track.js"></script>
 </body>
 </html>

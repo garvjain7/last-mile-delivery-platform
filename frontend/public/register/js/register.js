@@ -138,8 +138,12 @@
     var res = await postJson(ROLE_ENDPOINTS[selectedRole], payload);
 
     if (res.ok) {
-      window.location.assign(safePath(res.data.redirect_to) || '/');
-      return;
+      var redirect = safePath(res.data.redirect_to);
+      if (redirect) {
+        window.location.assign(redirect);
+        return;
+      }
+      res = { ok: false, status: 500, data: {} };
     }
 
     hide('register-status');

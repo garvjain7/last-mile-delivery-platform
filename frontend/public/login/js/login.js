@@ -1,15 +1,6 @@
 (function () {
   'use strict';
 
-  var ROLE_FALLBACK_REDIRECTS = {
-    admin: '/workspaces/admin/operations',
-    dispatcher: '/workspaces/dispatcher/live-dispatch',
-    fleet_manager: '/workspaces/fleet-manager/driver-operations',
-    merchant: '/workspaces/merchant/order-intake',
-    driver: '/workspaces/driver/active-route',
-    customer: '/workspaces/customer/delivery-tracking'
-  };
-
   var mode = 'email';
 
   function $(id) { return document.getElementById(id); }
@@ -35,13 +26,7 @@
   }
 
   function resolveRedirect(data) {
-    var direct = safePath(data.redirect_to);
-    if (direct) return direct;
-    var roles = Array.isArray(data.roles) ? data.roles : [];
-    for (var i = 0; i < roles.length; i++) {
-      if (ROLE_FALLBACK_REDIRECTS[roles[i]]) return ROLE_FALLBACK_REDIRECTS[roles[i]];
-    }
-    return '/';
+    return safePath(data.redirect_to);
   }
 
   async function postJson(url, body) {
@@ -145,8 +130,12 @@
     var res = await postJson('/auth/login', payload);
 
     if (res.ok) {
-      window.location.assign(resolveRedirect(res.data));
-      return;
+      var redirect = resolveRedirect(res.data);
+      if (redirect) {
+        window.location.assign(redirect);
+        return;
+      }
+      res = { ok: false, status: 500, data: {} };
     }
 
     hide('status-box');

@@ -84,7 +84,7 @@ class OrderListItem(BaseModel):
     merchant_order_ref: str
     tracking_token: str
     merchant: Dict[str, str]
-    warehouse: Dict[str, str]
+    warehouse: Optional[Dict[str, str]]
     status: str
     recipient_name: str
     is_guest: bool
@@ -133,7 +133,7 @@ async def list_orders(
     stmt = (
         select(Order, Merchant, Warehouse)
         .join(Merchant, Merchant.id == Order.merchant_id)
-        .join(Warehouse, Warehouse.id == Order.warehouse_id)
+        .outerjoin(Warehouse, Warehouse.id == Order.warehouse_id)
     )
 
     search_filter = _order_search_filter(q)
@@ -171,7 +171,7 @@ async def list_orders(
     if overdue:
         stmt = stmt.where(
             Order.window_latest < now,
-            Order.status.in_([OrderStatus.pending, OrderStatus.assigned,
+            Order.status.in_([OrderStatus.placed, OrderStatus.sent, OrderStatus.pending, OrderStatus.assigned,
                                OrderStatus.out_for_delivery, OrderStatus.attempt_failed]),
         )
 
@@ -230,7 +230,7 @@ async def list_orders(
             merchant_order_ref=o.merchant_order_ref,
             tracking_token=o.tracking_token,
             merchant={"id": str(m.id), "name": m.name},
-            warehouse={"id": str(wh.id), "code": wh.code},
+            warehouse={"id": str(wh.id), "code": wh.code} if wh else None,
             status=o.status.value,
             recipient_name=o.recipient_name,
             is_guest=o.customer_id is None,
@@ -255,6 +255,8 @@ async def list_orders(
 
 
 class OrderCountsOut(BaseModel):
+    placed: int
+    sent: int
     pending: int
     assigned: int
     out_for_delivery: int
@@ -304,7 +306,7 @@ async def order_counts(
     if overdue:
         stmt = stmt.where(
             Order.window_latest < now,
-            Order.status.in_([OrderStatus.pending, OrderStatus.assigned,
+            Order.status.in_([OrderStatus.placed, OrderStatus.sent, OrderStatus.pending, OrderStatus.assigned,
                                OrderStatus.out_for_delivery, OrderStatus.attempt_failed])
         )
 
@@ -314,6 +316,7 @@ async def order_counts(
         counts[s.value] = c
 
     return OrderCountsOut(
+        placed=counts["placed"], sent=counts["sent"],
         pending=counts["pending"], assigned=counts["assigned"],
         out_for_delivery=counts["out_for_delivery"], delivered=counts["delivered"],
         attempt_failed=counts["attempt_failed"], returned=counts["returned"],
@@ -365,7 +368,7 @@ class OrderDetailOut(BaseModel):
     merchant_order_ref: str
     tracking_token: str
     merchant: Dict[str, str]
-    warehouse: Dict[str, Any]
+    warehouse: Optional[Dict[str, Any]]
     status: str
     recipient_name: str
     recipient_phone: str
@@ -408,7 +411,7 @@ async def get_order(
             text("ST_X(warehouses.location::geometry)").label("wlon"),
         )
         .join(Merchant, Merchant.id == Order.merchant_id)
-        .join(Warehouse, Warehouse.id == Order.warehouse_id)
+        .outerjoin(Warehouse, Warehouse.id == Order.warehouse_id)
         .where(Order.tracking_token == code)
     )).first()
 
@@ -417,17 +420,24 @@ async def get_order(
 
     o, m, wh = row.Order, row.Merchant, row.Warehouse
     dlat, dlon = float(row.dlat), float(row.dlon)
-    wlat, wlon = float(row.wlat), float(row.wlon)
-
-    dist_row = (await db.execute(
-        text(
-            "SELECT ST_Distance("
-            "  ST_SetSRID(ST_MakePoint(:olon, :olat), 4326)::geography,"
-            "  ST_SetSRID(ST_MakePoint(:wlon, :wlat), 4326)::geography"
-            ") / 1000 AS dist_km"
-        ).bindparams(olat=dlat, olon=dlon, wlat=wlat, wlon=wlon)
-    )).first()
-    distance_km = round(float(dist_row.dist_km), 1) if dist_row else None
+    if wh:
+        wlat, wlon = float(row.wlat), float(row.wlon)
+        dist_row = (await db.execute(
+            text(
+                "SELECT ST_Distance("
+                "  ST_SetSRID(ST_MakePoint(:olon, :olat), 4326)::geography,"
+                "  ST_SetSRID(ST_MakePoint(:wlon, :wlat), 4326)::geography"
+                ") / 1000 AS dist_km"
+            ).bindparams(olat=dlat, olon=dlon, wlat=wlat, wlon=wlon)
+        )).first()
+        distance_km = round(float(dist_row.dist_km), 1) if dist_row else None
+        warehouse_out = {
+            "id": str(wh.id), "code": wh.code, "name": wh.name,
+            "latitude": wlat, "longitude": wlon,
+        }
+    else:
+        distance_km = None
+        warehouse_out = None
 
     customer_out = None
     if o.customer_id:
@@ -511,10 +521,7 @@ async def get_order(
         merchant_order_ref=o.merchant_order_ref,
         tracking_token=o.tracking_token,
         merchant={"id": str(m.id), "name": m.name},
-        warehouse={
-            "id": str(wh.id), "code": wh.code, "name": wh.name,
-            "latitude": wlat, "longitude": wlon,
-        },
+        warehouse=warehouse_out,
         status=o.status.value,
         recipient_name=o.recipient_name, recipient_phone=o.recipient_phone,
         is_guest=o.customer_id is None,

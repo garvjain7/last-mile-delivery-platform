@@ -8,6 +8,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from jose import JWTError
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -52,6 +53,23 @@ INVALID_CREDENTIALS = "Invalid credentials."
 DUMMY_PASSWORD_HASH = "$2b$12$Nr1NHZbz8q83IaUP3NsZAeshxCWU9MpI8KcN/9vgy06kUcFyer5aS"
 
 
+class EmailTakenError(ValueError):
+    """Registration was rejected because the email is already registered."""
+
+
+def is_email_unique_violation(error: IntegrityError) -> bool:
+    original = error.orig
+    constraint = getattr(original, "constraint_name", None)
+    return constraint == "users_email_key" or "users_email_key" in str(original)
+
+
+async def acquire_email_cooldown(kind: str, user_id: uuid_mod.UUID) -> bool:
+    from streaming.client import get_redis_client
+
+    redis = await get_redis_client()
+    return bool(await redis.set(f"cooldown:email:{kind}:{user_id}", "1", nx=True, ex=60))
+
+
 # ---------------------------------------------------------------------------
 # Shared helper: persist a new refresh token and return the full token pair.
 # ---------------------------------------------------------------------------
@@ -73,7 +91,7 @@ async def _issue_tokens(user: User, db: AsyncSession) -> _InternalTokenPair:
     return _InternalTokenPair(
         access_token=access_token,
         refresh_token=raw_refresh,
-        redirect_to=redirect_for_roles(roles),
+        redirect_to=redirect_for_roles(roles, str(user.id)),
         user_id=str(user.id),
         roles=roles,
     )
@@ -103,7 +121,7 @@ async def register_user(
     if payload.email:
         existing = await db.scalar(select(User).where(User.email == payload.email))
         if existing:
-            raise ValueError("An account with this email already exists.")
+            raise EmailTakenError("email_taken")
     if payload.phone:
         existing = await db.scalar(select(User).where(User.phone == payload.phone))
         if existing:
@@ -116,7 +134,13 @@ async def register_user(
         full_name=payload.full_name,
     )
     db.add(user)
-    await db.flush()  # populate user.id before inserting dependents
+    try:
+        await db.flush()  # populate user.id before inserting dependents
+    except IntegrityError as exc:
+        await db.rollback()
+        if is_email_unique_violation(exc):
+            raise EmailTakenError("email_taken") from exc
+        raise
 
     role_enum = UserRole(role)
     db.add(UserRole_(user_id=user.id, role=role_enum))
@@ -125,7 +149,13 @@ async def register_user(
         # Driver profile starts as 'pending' — an admin must approve before they go active.
         db.add(Driver(user_id=user.id))
 
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        if is_email_unique_violation(exc):
+            raise EmailTakenError("email_taken") from exc
+        raise
 
 
 # ---------------------------------------------------------------------------
@@ -189,40 +219,61 @@ async def refresh_tokens(raw_refresh_token: str, db: AsyncSession) -> _InternalT
     The raw token comes from the httpOnly refresh_token cookie — never from JSON body.
     """
     token_hash = hash_refresh_token(raw_refresh_token)
-    stmt = select(RefreshToken).where(RefreshToken.token_hash == token_hash)
-    stored: Optional[RefreshToken] = await db.scalar(stmt)
-    if stored is None:
-        raise ValueError("Refresh token is invalid or expired.")
-
-    now = datetime.now(timezone.utc)
-    if stored.revoked_at is not None:
-        await db.execute(
-            update(RefreshToken)
-            .where(RefreshToken.user_id == stored.user_id, RefreshToken.revoked_at.is_(None))
-            .values(revoked_at=now)
+    tokens = None
+    rejected = False
+    async with db.begin():
+        stored: Optional[RefreshToken] = await db.scalar(
+            select(RefreshToken)
+            .where(RefreshToken.token_hash == token_hash)
+            .with_for_update()
         )
-        await db.commit()
+        now = datetime.now(timezone.utc)
+        if stored is None or stored.expires_at <= now:
+            rejected = True
+        else:
+            within_grace = (
+                stored.revoked_at is not None
+                and stored.rotated_at is not None
+                and timedelta(0) <= now - stored.rotated_at <= timedelta(seconds=30)
+            )
+            if stored.revoked_at is not None and not within_grace:
+                await db.execute(
+                    update(RefreshToken)
+                    .where(RefreshToken.user_id == stored.user_id)
+                    .values(revoked_at=now, rotated_at=None)
+                )
+                rejected = True
+            else:
+                user = await db.scalar(
+                    select(User)
+                    .options(selectinload(User.roles))
+                    .where(User.id == stored.user_id)
+                )
+                if user is None or not user.is_active or (user.locked_until is not None and user.locked_until > now):
+                    if stored.revoked_at is None:
+                        stored.revoked_at = now
+                        stored.rotated_at = None
+                    rejected = True
+                else:
+                    if stored.revoked_at is None:
+                        stored.revoked_at = now
+                        stored.rotated_at = now
+                    tokens = await _issue_tokens(user, db)
+    if rejected or tokens is None:
         raise ValueError("Refresh token is invalid or expired.")
-    if stored.expires_at <= now:
-        raise ValueError("Refresh token is invalid or expired.")
-
-    # Revoke the old token immediately (single-use rotation).
-    stored.revoked_at = now
-
-    # Re-load user + roles.
-    user_stmt = (
-        select(User)
-        .options(selectinload(User.roles))
-        .where(User.id == stored.user_id)
-    )
-    user: Optional[User] = await db.scalar(user_stmt)
-    if user is None or not user.is_active or (user.locked_until is not None and user.locked_until > now):
-        await db.commit()
-        raise ValueError("Refresh token is invalid or expired.")
-
-    tokens = await _issue_tokens(user, db)
-    await db.commit()
     return tokens
+
+
+async def revoke_refresh_token(raw_refresh_token: Optional[str], db: AsyncSession) -> None:
+    if not raw_refresh_token:
+        return
+    now = datetime.now(timezone.utc)
+    await db.execute(
+        update(RefreshToken)
+        .where(RefreshToken.token_hash == hash_refresh_token(raw_refresh_token))
+        .values(revoked_at=now, rotated_at=None)
+    )
+    await db.commit()
 
 
 # ---------------------------------------------------------------------------
@@ -246,6 +297,9 @@ async def request_password_reset(payload: ForgotPasswordRequest, db: AsyncSessio
 
     if user is None or not user.is_active:
         # Silently succeed — don't reveal whether the account exists.
+        return
+
+    if user.email and not await acquire_email_cooldown("forgot-password", user.id):
         return
 
     # Invalidate any existing unused reset tokens for this user.
@@ -303,13 +357,11 @@ async def reset_password(payload: ResetPasswordRequest, db: AsyncSession) -> Non
     stored.used_at = datetime.now(timezone.utc)
 
     # Revoke all active refresh tokens — forces re-login on all devices after password change.
-    active_refresh_stmt = select(RefreshToken).where(
-        RefreshToken.user_id == user.id,
-        RefreshToken.revoked_at.is_(None),
+    await db.execute(
+        update(RefreshToken)
+        .where(RefreshToken.user_id == user.id)
+        .values(revoked_at=datetime.now(timezone.utc), rotated_at=None)
     )
-    active_tokens = (await db.scalars(active_refresh_stmt)).all()
-    for rt in active_tokens:
-        rt.revoked_at = datetime.now(timezone.utc)
 
     await db.commit()
 
@@ -349,6 +401,6 @@ async def get_current_user(token: str, db: AsyncSession) -> MeResponse:
         phone=user.phone,
         full_name=user.full_name,
         roles=roles,
-        redirect_to=redirect_for_roles(roles),
+        redirect_to=redirect_for_roles(roles, str(user.id)),
         driver_status=(user.driver_profile.status.value if user.driver_profile else None),
     )

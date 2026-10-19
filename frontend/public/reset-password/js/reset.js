@@ -5,6 +5,11 @@
   var searchParams = new URLSearchParams(window.location.search);
   var token = searchParams.get('token');
   var isInvite = searchParams.get('invite') === '1';
+  if (token !== null) {
+    searchParams.delete('token');
+    var cleanQuery = searchParams.toString();
+    history.replaceState(null, '', window.location.pathname + (cleanQuery ? '?' + cleanQuery : '') + window.location.hash);
+  }
 
   if (isInvite) {
     var h2 = document.querySelector('.auth-card h2');

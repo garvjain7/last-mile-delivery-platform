@@ -13,7 +13,7 @@ CREATE TYPE user_role AS ENUM (
 );
 
 CREATE TYPE order_status AS ENUM (
-    'pending', 'assigned', 'out_for_delivery', 'delivered', 'attempt_failed', 'returned', 'cancelled'
+    'placed', 'sent', 'pending', 'assigned', 'out_for_delivery', 'delivered', 'attempt_failed', 'returned', 'cancelled'
 );
 
 CREATE TYPE vehicle_type AS ENUM (
@@ -70,6 +70,7 @@ CREATE TABLE refresh_tokens (
     token_hash  text        NOT NULL UNIQUE,
     expires_at  timestamptz NOT NULL,
     revoked_at  timestamptz,
+    rotated_at  timestamptz,
     created_at  timestamptz NOT NULL DEFAULT now()
 );
 
@@ -142,9 +143,10 @@ CREATE TABLE orders (
     id                  uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
     merchant_id         uuid          NOT NULL REFERENCES merchants(id),
     merchant_order_ref  text          NOT NULL,
-    warehouse_id        uuid          NOT NULL REFERENCES warehouses(id),
+    warehouse_id        uuid          REFERENCES warehouses(id),
     customer_id         uuid          REFERENCES users(id),   -- NULL = link-only (guest) order
-    status              order_status  NOT NULL DEFAULT 'pending',
+    idempotency_key     text,
+    status              order_status  NOT NULL DEFAULT 'placed',
     recipient_name      text          NOT NULL,
     recipient_phone     text          NOT NULL CHECK (recipient_phone ~ '^\+[1-9][0-9]{7,14}$'),
     delivery_address    text          NOT NULL,
@@ -248,13 +250,17 @@ CREATE INDEX idx_warehouses_location
 
 CREATE INDEX idx_orders_warehouse_active
     ON orders (warehouse_id, status)
-    WHERE status IN ('pending', 'assigned', 'out_for_delivery', 'attempt_failed');
+    WHERE status IN ('placed', 'sent', 'pending', 'assigned', 'out_for_delivery', 'attempt_failed');
 
 CREATE INDEX idx_orders_merchant_created
     ON orders (merchant_id, created_at DESC);
 
 CREATE INDEX idx_orders_customer_created
     ON orders (customer_id, created_at DESC) WHERE customer_id IS NOT NULL;
+
+CREATE UNIQUE INDEX uq_orders_customer_idempotency_key
+    ON orders (customer_id, idempotency_key)
+    WHERE idempotency_key IS NOT NULL;
 
 CREATE UNIQUE INDEX uq_routes_driver_active
     ON routes (driver_id)
@@ -282,4 +288,3 @@ CREATE INDEX idx_merchant_members_merchant
 
 CREATE INDEX idx_warehouse_staff_warehouse
     ON warehouse_staff (warehouse_id);
-    

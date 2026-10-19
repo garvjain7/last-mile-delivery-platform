@@ -19,7 +19,7 @@ services:
     name: routing-worker
     env: python
     buildCommand: pip install -r services/routing_worker/requirements.txt
-    startCommand: uvicorn services.routing_worker.app.main:app --host 0.0.0.0 --port $PORT
+    startCommand: python -m services.routing_worker.app.main
     envVars:
       - key: DATABASE_URL
         sync: false
@@ -58,7 +58,7 @@ services:
     name: simulator
     env: python
     buildCommand: pip install -r services/simulator/requirements.txt
-    startCommand: uvicorn services.simulator.app.main:app --host 0.0.0.0 --port $PORT
+    startCommand: python -m services.simulator.app.main
     envVars:
       - key: CORE_API_URL
         sync: false

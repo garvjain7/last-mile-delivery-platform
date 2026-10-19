@@ -183,7 +183,7 @@ async def admin_overview(
 
     open_orders_row = await db.execute(
         select(func.count()).select_from(Order).where(Order.status.in_([
-            OrderStatus.pending, OrderStatus.assigned,
+            OrderStatus.placed, OrderStatus.sent, OrderStatus.pending, OrderStatus.assigned,
             OrderStatus.out_for_delivery, OrderStatus.attempt_failed,
         ]))
     )
@@ -288,13 +288,14 @@ async def admin_overview(
     oobs_rows = (await db.execute(
         select(Order.status, func.count().label("cnt"))
         .where(Order.status.in_([
-            OrderStatus.pending, OrderStatus.assigned,
+            OrderStatus.placed, OrderStatus.sent, OrderStatus.pending, OrderStatus.assigned,
             OrderStatus.out_for_delivery, OrderStatus.attempt_failed,
         ]))
         .group_by(Order.status)
     )).all()
     open_orders_by_status: Dict[str, int] = {
-        "pending": 0, "assigned": 0, "out_for_delivery": 0, "attempt_failed": 0
+        "placed": 0, "sent": 0, "pending": 0, "assigned": 0,
+        "out_for_delivery": 0, "attempt_failed": 0
     }
     for s, c in oobs_rows:
         open_orders_by_status[s.value] = c

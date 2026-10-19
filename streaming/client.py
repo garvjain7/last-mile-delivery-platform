@@ -32,12 +32,9 @@ async def close_redis_client() -> None:
         await _redis_client.close()
         _redis_client = None
 
-async def add_to_stream(stream_name: str, fields: dict, maxlen: Optional[int] = None) -> str:
+async def add_to_stream(stream_name: str, fields: dict) -> str:
     """
-    Publish an event to a Redis Stream using MAXLEN ~ trimming.
-    
-    # TODO: Implement MAXLEN ~ 50000 XADD helper for stream events
+    Publish an event to a Redis Stream, retaining approximately 10,000 entries.
     """
     client = await get_redis_client()
-    # TODO: Perform XADD operation on client
-    pass
+    return await client.xadd(stream_name, fields, maxlen=10_000, approximate=True)

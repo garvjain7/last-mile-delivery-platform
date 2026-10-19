@@ -1,3 +1,7 @@
+import { createAccountChip } from '/static/shared/js/customer/account-chip.js';
+import { getMe } from '/static/shared/js/customer/api.js';
+import { renderPublicTimeline } from '/static/shared/js/customer/timeline.js';
+
 (function () {
   var API = '/api/track/';
 
@@ -41,25 +45,7 @@
     document.getElementById('r-eta').textContent = d.eta_text || '';
 
     var list = document.getElementById('r-steps');
-    list.textContent = '';
-    var CHECK = '<svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M3 7.5l2.5 2.5L11 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-    var CROSS = '<svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M4 4l6 6M10 4l-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
-    var SR = { done: 'Completed', now: 'Current step', failed: 'Problem', next: 'Upcoming' };
-
-    (d.steps || []).forEach(function (s) {
-      var state = SR[s.state] ? s.state : 'next';
-      var li = el('li', state);
-      var mark = el('span', 'mark');
-      if (state === 'done') mark.innerHTML = CHECK; // constant markup, no API data
-      else if (state === 'failed') mark.innerHTML = CROSS;
-      else mark.appendChild(el('span', 'mark-dot'));
-      li.appendChild(mark);
-      li.appendChild(el('span', 'step-label', s.label));
-      li.appendChild(el('span', 'sr', SR[state]));
-      if (s.time) li.appendChild(el('span', 'step-time', s.time));
-      if (s.note) li.appendChild(el('span', 'step-note', s.note));
-      list.appendChild(li);
-    });
+    renderPublicTimeline(d.steps || [], list);
 
     var dl = document.getElementById('r-details');
     dl.textContent = '';
@@ -137,4 +123,33 @@
     input.value = initial;
     track(initial);
   }
+
+  const accountActions = document.getElementById('track-account-actions');
+  const accountDock = document.createElement('div');
+  accountDock.id = 'track-account-dock';
+  document.body.append(accountDock);
+  getMe({ redirectOnFailure: false }).then(function (user) {
+    accountActions.replaceChildren();
+    if (!user) {
+      var login = el('a', 'btn btn-solid btn-pill', 'Log in');
+      login.href = '/login';
+      accountActions.append(login);
+      return;
+    }
+    var dashboard = el('a', 'btn btn-solid btn-pill dashboard-link', 'Continue to dashboard');
+    var target = new URL(user.redirect_to, window.location.origin);
+    dashboard.href = target.origin === window.location.origin && target.pathname.startsWith('/') ? user.redirect_to : '/';
+    accountActions.append(dashboard);
+    accountDock.append(createAccountChip(user, { track: true }));
+    document.body.classList.add('has-account-chip');
+  }).catch(function () {
+    accountActions.replaceChildren();
+  });
+
+  window.addEventListener('focus', function () {
+    if (lastCode) track(lastCode);
+  });
+  window.addEventListener('pageshow', function (event) {
+    if (event.persisted && lastCode) track(lastCode);
+  });
 })();

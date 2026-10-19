@@ -17,11 +17,13 @@ from sqlalchemy import (
     Enum,
     ForeignKey,
     Identity,
+    Index,
     Integer,
     Numeric,
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.dialects.postgresql import CITEXT, INET, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -42,6 +44,8 @@ class UserRole(python_enum.Enum):
 
 
 class OrderStatus(python_enum.Enum):
+    placed           = "placed"
+    sent             = "sent"
     pending          = "pending"
     assigned         = "assigned"
     out_for_delivery = "out_for_delivery"
@@ -159,6 +163,7 @@ class RefreshToken(Base):
     token_hash: Mapped[str]                = mapped_column(Text, unique=True, nullable=False)
     expires_at: Mapped[datetime]           = mapped_column(DateTime(timezone=True), nullable=False)
     revoked_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    rotated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime]           = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
     user: Mapped["User"] = relationship(back_populates="refresh_tokens")
@@ -295,13 +300,20 @@ class Driver(Base):
 
 
 class Order(Base):
-    """Delivery order. warehouse_id is assigned at creation via PostGIS KNN.
+    """Delivery order. Warehouse assignment follows merchant handoff.
     delivery_location is a PostGIS geography point snapshot of the dropoff.
     customer_id is nullable — guest orders have no registered user."""
 
     __tablename__ = "orders"
     __table_args__ = (
         UniqueConstraint("merchant_id", "merchant_order_ref", name="uq_orders_merchant_ref"),
+        Index(
+            "uq_orders_customer_idempotency_key",
+            "customer_id",
+            "idempotency_key",
+            unique=True,
+            postgresql_where=text("idempotency_key IS NOT NULL"),
+        ),
         CheckConstraint(
             "recipient_phone ~ '^\\+[1-9][0-9]{7,14}$'",
             name="orders_recipient_phone_format",
@@ -321,9 +333,10 @@ class Order(Base):
     id:                 Mapped[uuid.UUID]          = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=func.uuid_generate_v4())
     merchant_id:        Mapped[uuid.UUID]          = mapped_column(UUID(as_uuid=True), ForeignKey("merchants.id"), nullable=False)
     merchant_order_ref: Mapped[str]                = mapped_column(Text, nullable=False)
-    warehouse_id:       Mapped[uuid.UUID]          = mapped_column(UUID(as_uuid=True), ForeignKey("warehouses.id"), nullable=False)
+    warehouse_id:       Mapped[Optional[uuid.UUID]]= mapped_column(UUID(as_uuid=True), ForeignKey("warehouses.id"), nullable=True)
     customer_id:        Mapped[Optional[uuid.UUID]]= mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
-    status:             Mapped[OrderStatus]        = mapped_column(Enum(OrderStatus, name="order_status"), nullable=False, server_default="pending")
+    idempotency_key:    Mapped[Optional[str]]     = mapped_column(Text, nullable=True)
+    status:             Mapped[OrderStatus]        = mapped_column(Enum(OrderStatus, name="order_status"), nullable=False, server_default="placed")
     recipient_name:     Mapped[str]                = mapped_column(Text, nullable=False)
     recipient_phone:    Mapped[str]                = mapped_column(Text, nullable=False)
     delivery_address:   Mapped[str]                = mapped_column(Text, nullable=False)
@@ -337,7 +350,7 @@ class Order(Base):
     updated_at:         Mapped[datetime]           = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
     merchant:    Mapped["Merchant"]         = relationship(back_populates="orders")
-    warehouse:   Mapped["Warehouse"]        = relationship(back_populates="orders")
+    warehouse:   Mapped[Optional["Warehouse"]] = relationship(back_populates="orders")
     route_stops: Mapped[List["RouteStop"]]  = relationship(back_populates="order")
     events:      Mapped[List["OrderEvent"]] = relationship(back_populates="order")
 

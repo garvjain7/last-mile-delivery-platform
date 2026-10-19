@@ -57,26 +57,30 @@ class TrackingResponse(BaseModel):
 # Step pipeline — five canonical delivery milestones derived from OrderStatus
 # ---------------------------------------------------------------------------
 
-# Ordered pipeline of visible delivery steps.
+# Ordered pipeline of visible delivery stages.
 _PIPELINE = ["Confirmed", "Picked", "Loaded", "Transit", "Delivered"]
 
 # Map every OrderStatus enum value to:
 #   (pipeline_index_of_current_step, is_terminal_failure)
 # Pipeline index -1 means "no step is current" (e.g. cancelled before any step).
 _STATUS_MAP: dict[OrderStatus, tuple[int, bool]] = {
-    OrderStatus.pending:          (0, False),   # Confirmed = now, rest = next
-    OrderStatus.assigned:         (1, False),   # Picked = now
-    OrderStatus.out_for_delivery: (3, False),   # Transit = now (Loaded implied done)
-    OrderStatus.delivered:        (4, False),   # Delivered = now → all done
-    OrderStatus.attempt_failed:   (3, True),    # Transit step = failed
-    OrderStatus.returned:         (3, True),    # Same: delivery attempt failed
-    OrderStatus.cancelled:        (0, True),    # Confirmed step = failed
+    OrderStatus.placed:           (0, False),   # Confirmed
+    OrderStatus.sent:             (1, False),   # Picked
+    OrderStatus.pending:          (2, False),   # Loaded at the hub
+    OrderStatus.assigned:         (2, False),   # Still at the hub, scheduled
+    OrderStatus.out_for_delivery: (3, False),   # Transit
+    OrderStatus.delivered:        (4, False),   # Delivered
+    OrderStatus.attempt_failed:   (3, True),
+    OrderStatus.returned:         (3, True),
+    OrderStatus.cancelled:        (0, True),
 }
 
 # Display labels for status chip
 _STATUS_LABELS: dict[OrderStatus, str] = {
-    OrderStatus.pending:          "Order confirmed",
-    OrderStatus.assigned:         "Picked up",
+    OrderStatus.placed:           "Order confirmed",
+    OrderStatus.sent:             "On its way to the delivery hub",
+    OrderStatus.pending:          "At the delivery hub",
+    OrderStatus.assigned:         "Scheduled for delivery",
     OrderStatus.out_for_delivery: "Out for delivery",
     OrderStatus.delivered:        "Delivered",
     OrderStatus.attempt_failed:   "Delivery attempted",
@@ -85,6 +89,8 @@ _STATUS_LABELS: dict[OrderStatus, str] = {
 }
 
 _TONE: dict[OrderStatus, str] = {
+    OrderStatus.placed:           "ok",
+    OrderStatus.sent:             "ok",
     OrderStatus.pending:          "ok",
     OrderStatus.assigned:         "ok",
     OrderStatus.out_for_delivery: "ok",
@@ -95,8 +101,10 @@ _TONE: dict[OrderStatus, str] = {
 }
 
 _ETA_TEXT: dict[OrderStatus, str] = {
-    OrderStatus.pending:          "Your order has been confirmed and is being prepared.",
-    OrderStatus.assigned:         "Your parcel has been picked up and is on its way to the delivery hub.",
+    OrderStatus.placed:           "The seller is preparing your parcel.",
+    OrderStatus.sent:             "The seller has sent your parcel to the delivery hub.",
+    OrderStatus.pending:          "Your parcel has arrived at the delivery hub and is being scheduled.",
+    OrderStatus.assigned:         "Your parcel is scheduled for delivery.",
     OrderStatus.out_for_delivery: "Your parcel is out for delivery today.",
     OrderStatus.delivered:        "Your parcel has been delivered.",
     OrderStatus.attempt_failed:   "We attempted delivery but couldn't complete it. We'll try again or contact you.",
@@ -110,60 +118,53 @@ def _build_steps(
     events: list[OrderEvent],
     order_created_at: Optional[datetime] = None,
 ) -> List[TrackingStep]:
-    """Build the five-step pipeline list from the current order status and events."""
+    """Build the established five-step public pipeline from internal states."""
     current_idx, is_failure = _STATUS_MAP[order_status]
-
-    # Build a timestamp lookup: pipeline index → occurred_at from order_events.
-    # Use the earliest event that transitions into the relevant status.
     status_to_pipeline: dict[OrderStatus, int] = {
-        OrderStatus.pending:          0,
-        OrderStatus.assigned:         1,
+        OrderStatus.placed: 0,
+        OrderStatus.sent: 1,
+        OrderStatus.pending: 2,
+        OrderStatus.assigned: 2,
         OrderStatus.out_for_delivery: 3,
-        OrderStatus.delivered:        4,
-        OrderStatus.attempt_failed:   3,
-        OrderStatus.returned:         3,
-        OrderStatus.cancelled:        0,
+        OrderStatus.delivered: 4,
+        OrderStatus.attempt_failed: 3,
+        OrderStatus.returned: 3,
+        OrderStatus.cancelled: 0,
     }
     timestamp_by_idx: dict[int, datetime] = {}
-    for ev in events:
-        idx = status_to_pipeline.get(ev.to_status)
+    for event in events:
+        idx = status_to_pipeline.get(event.to_status)
         if idx is not None and idx not in timestamp_by_idx:
-            timestamp_by_idx[idx] = ev.occurred_at
-
-    # If no explicit event for 'pending' (step 0), fallback to order.created_at
+            timestamp_by_idx[idx] = event.occurred_at
     if 0 not in timestamp_by_idx and order_created_at is not None:
         timestamp_by_idx[0] = order_created_at
 
     steps: List[TrackingStep] = []
-    for i, label in enumerate(_PIPELINE):
-        if i < current_idx:
+    for index, label in enumerate(_PIPELINE):
+        if index < current_idx:
             state = "done"
-        elif i == current_idx:
+        elif index == current_idx:
             state = "failed" if is_failure else "now"
         else:
             state = "next"
 
-        ts = timestamp_by_idx.get(i)
-        time_str: Optional[str] = None
-        if ts is not None:
-            # Cross-platform format: "10 Oct, 2:30 pm"
-            day = str(ts.day)
-            month = ts.strftime("%b")
-            hour = ts.strftime("%I").lstrip("0") or "12"
-            minute = ts.strftime("%M")
-            ampm = ts.strftime("%p").lower()
-            time_str = f"{day} {month}, {hour}:{minute} {ampm}"
+        occurred_at = timestamp_by_idx.get(index)
+        time_text = None
+        if occurred_at is not None:
+            hour = occurred_at.strftime("%I").lstrip("0") or "12"
+            time_text = (
+                f"{occurred_at.day} {occurred_at.strftime('%b')}, "
+                f"{hour}:{occurred_at.strftime('%M')} {occurred_at.strftime('%p').lower()}"
+            )
 
-        note: Optional[str] = None
+        note = None
         if state == "failed" and order_status == OrderStatus.attempt_failed:
             note = "We couldn't complete the delivery."
         elif state == "failed" and order_status == OrderStatus.returned:
             note = "Parcel is being returned to sender."
         elif state == "failed" and order_status == OrderStatus.cancelled:
             note = "Order was cancelled."
-
-        steps.append(TrackingStep(label=label, time=time_str, state=state, note=note))
-
+        steps.append(TrackingStep(label=label, time=time_text, state=state, note=note))
     return steps
 
 

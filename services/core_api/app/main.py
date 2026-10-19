@@ -14,6 +14,7 @@ from slowapi.errors import RateLimitExceeded
 
 from services.core_api.app.auth.router import router as auth_router
 from services.core_api.app.orders.router import router as orders_router
+from services.core_api.app.customer.router import router as customer_router
 from services.core_api.app.tracking.router import limiter as tracking_limiter
 from services.core_api.app.tracking.router import router as tracking_router
 from services.core_api.app.staff.router import router as staff_router
@@ -93,6 +94,8 @@ async def admin_security_headers_middleware(request: Request, call_next):
     ):
         for key, value in ADMIN_SECURITY_HEADERS.items():
             response.headers[key] = value
+    if path == "/api/users" or path.startswith("/api/users/"):
+        response.headers["Cache-Control"] = "no-store"
     return response
 
 
@@ -108,10 +111,18 @@ app.mount("/static/reset-password/js", StaticFiles(directory=frontend_dir / "pub
 app.mount("/static/track/css", StaticFiles(directory=frontend_dir / "public" / "track" / "css"), name="static-track-css")
 app.mount("/static/track/js", StaticFiles(directory=frontend_dir / "public" / "track" / "js"), name="static-track-js")
 
+
+@app.get("/health", tags=["Health"])
+async def health():
+    """Lightweight liveness response; performs no dependency checks."""
+    return {"service": "core-api", "status": "live"}
+
+
 app.include_router(home_router, tags=["Home"])
 app.include_router(tracking_router)
 app.include_router(auth_router, prefix="/auth", tags=["Auth"])
 app.include_router(orders_router, prefix="/orders", tags=["Orders"])
+app.include_router(customer_router)
 app.include_router(staff_router, prefix="/staff", tags=["Staff"])
 admin_router = APIRouter(
     prefix="/api/admin",
