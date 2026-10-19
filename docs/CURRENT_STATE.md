@@ -1,64 +1,73 @@
 # Current Repository State
 
 **Reviewed:** 2026-10-19
-**Purpose:** Factual snapshot of what the checked-in application currently exposes and implements. Planned behavior is identified separately in [API_CONTRACTS.md](API_CONTRACTS.md).
+**Purpose:** Describe what the checked-in application currently implements. Planned behavior is identified separately in [API_CONTRACTS.md](API_CONTRACTS.md) and [end-to-end-system-flow.md](end-to-end-system-flow.md).
 
 ## Service boundaries
 
 | Component | Current responsibility | Implementation state |
 | --- | --- | --- |
-| Core API (`services/core_api`) | Public pages, authentication, customer order APIs, tracking, staff endpoints, admin API, role-gated panels | Authentication, public tracking, admin management, customer order reads, claims, and order creation have database-backed implementations. Minimal staff endpoints remain stubs. |
-| Routing Worker (`services/routing_worker`) | Intended order routing and terminal delivery-event processing | Entrypoint exists, but consumer startup and processing are TODOs; `main()` exits after a short delay. |
-| Control Tower (`services/control_tower`) | Intended live fleet state, WebSocket feed, and rescue trigger | FastAPI routes exist; Redis telemetry processing and rescue behavior are incomplete/stubbed. |
-| Driver Gateway (`services/driver_gateway`) | Stateless driver authentication and event ingestion | Validates HS256 driver-role JWTs and appends validated driver events to Redis Streams; it does not access Postgres. |
-| Simulator (`services/simulator`) | External client for order and driver traffic | Entrypoint exists; order generation and driver simulation are TODOs, and `main()` exits after a short delay. |
-| Frontend | Public pages, admin console, control-tower dashboard, driver app, and role panels | Static HTML/CSS/JS is used. Admin has separate HTML files and JS modules. |
+| Core API (`services/core_api`) | Public pages, authentication, customer order APIs, public tracking, admin APIs, and role-gated panels | Auth, customer order reads/creation/claiming, tracking, admin operations, and panels have database-backed implementations. The minimal `/staff` endpoints remain stubs. |
+| Routing Worker (`services/routing_worker`) | Intended order routing and terminal delivery-event processing | Entrypoint exists, but routing and terminal-event consumers are not implemented; `main()` exits after a short delay. |
+| Control Tower (`services/control_tower`) | Fleet dashboard, WebSocket, and rescue request API | Routes are declared, but live telemetry and rescue processing are incomplete. The rescue endpoint currently returns a stub response. |
+| Driver Gateway (`services/driver_gateway`) | Stateless driver authentication and event ingestion | Validates HS256 driver-role JWTs and publishes validated events to Redis Streams; it does not access Postgres. |
+| Simulator (`services/simulator`) | External client for order and driver traffic | Entrypoint exists, but order generation and driver simulation are TODOs; `main()` exits after a short delay. |
+| Frontend | Public pages, customer account pages, admin console, role panels, Control Tower, and Driver App | Static HTML/CSS/JS. The admin console has seven HTML pages; customer account pages have separate overview, order-list, order-detail, and request HTML files. |
 
-The repository's unified application entrypoint is `services/app.py`. The individual service apps also have their own entrypoints. The routing worker and simulator are processes, not ASGI applications.
+`services/app.py` is the unified application entrypoint. The individual services also have their own entrypoints. Routing Worker and Simulator are processes, not ASGI applications.
 
 ## Implemented HTTP surface
 
 ### Core API
 
-- Public HTML: `GET /`, `/login`, `/register`, `/reset-password`, `/track`.
-- Auth: `POST /auth/register/customer`, `/auth/register/driver`, `/auth/login`, `/auth/logout`, `/auth/refresh`, `/auth/forgot-password`, `/auth/reset-password`; `GET /auth/me`.
-- Public tracking data: `GET /api/track/{code}` (database lookup; rate limited; unknown codes return the same 404 contract).
-- Orders: `POST /orders/` creates an unclaimed integration order; authenticated customers create through `POST /api/users/{user_id}/request`. Both persist the order and initial event, then publish after commit.
-- Staff: `GET /staff/orders` currently returns an empty list; `POST /staff/orders/{order_id}/unstick` currently returns a stub result.
-- Admin API: all admin endpoints are under `/api/admin`; see [API_CONTRACTS.md](API_CONTRACTS.md). The shared router applies admin authorization and CSRF checks.
-- Role panels: `/admin` and its seven named HTML pages; `/merchant`, `/dispatcher`, `/fleet-manager`, `/driver`. Page and asset requests are gated against the current user and role in Postgres. The public tracking page and tracking data endpoint require no login.
-- Customer panels: `/users/{user_id}`, `/users/{user_id}/orders/{order_id}`, and `/users/{user_id}/request` require the matching customer identity. The separate `/users/{user_id}/orders` page route is not implemented. Customer overview, order list/detail, active-seller lookup, reverse geocoding, and order-claim APIs are under `/api/users/{user_id}` and return no-store responses.
-- Health: `GET /health`, `/health/live`, `/health/ready`. Core API readiness checks Postgres and Redis; startup also executes `SELECT 1` and logs connection/query timings.
+- Public HTML: `GET /`, `/login`, `/register`, `/reset-password`, and `/track`.
+- Auth: registration, login, logout, refresh, forgot/reset password, and `GET /auth/me` under `/auth`.
+- Public parcel tracking: `GET /api/track/{code}`; no login is required. The endpoint uses the database and is limited to 30 requests per minute per IP.
+- Guest/integration order intake: `POST /orders/` creates an unclaimed order.
+- Customer API: authenticated endpoints under `/api/users/{user_id}` for the overview, filtered order list, order detail, active sellers, reverse geocoding, order creation, and guest-order claim.
+- Customer HTML: `/users/{user_id}`, `/users/{user_id}/orders`, `/users/{user_id}/orders/{order_id}`, and `/users/{user_id}/request`, plus authenticated customer assets at `/users/assets/*`.
+- Admin API: all admin endpoints are mounted under `/api/admin` with `require_admin` and the CSRF dependency at router level; CSRF validation applies to unsafe methods.
+- Admin HTML: `/admin` and its six named subpages; assets are under `/admin/assets/*`. Other role panels are served from authenticated handlers. Customer and role panel files are not exposed by a general static mount.
+- Minimal staff: `GET /staff/orders` returns an empty list; `POST /staff/orders/{order_id}/unstick` returns a stub response.
+- Core API health: `/health`, `/health/live`, and `/health/ready`. Readiness checks Postgres and Redis; startup also runs `SELECT 1` and logs connection/query timings.
+
+### Customer order behavior
+
+Customer endpoints require an active, unlocked customer whose ID matches both the URL and the authenticated token. Failed ownership or role checks return `404`; responses are marked `Cache-Control: no-store`. The overview returns counts and up to five active orders. The order list supports `tab`, `status`, `seller`, `q`, `from`, `to`, `cursor`, and `limit`, and includes counts and sellers on its first page. Detail returns the caller's order and its event timeline.
+
+Creating an order requires an active seller, recipient name and phone, delivery address, parcel weight/volume, and an `Idempotency-Key`. It is limited to 10 attempts per hour per customer. Core API geocodes the address, then commits the `placed` order and its initial event atomically with `warehouse_id = NULL`; after commit it publishes `order.created`. A replay returns the original order. Guest/integration order intake uses the same creation service without customer idempotency. Warehouse selection is reserved for merchant handoff; the selection policy is still open and merchant handoff is not implemented.
+
+The claim endpoint links an unclaimed order using tracking code and recipient phone and is limited to five attempts per 10 minutes. It does not expose another customer's order.
 
 ### Other service APIs
 
-- Control Tower: `GET /health/live`, `/health/ready`; WebSocket `/ws/fleet`; `POST /rescue/{vehicle_id}`. Readiness currently returns a static ready response; telemetry and rescue processing are incomplete.
-- Driver Gateway: `POST /driver/events`; `GET /health/live`, `/health/ready`. The event route validates the shared driver JWT and publishes telemetry and `route.started` to `driver_events_stream`; readiness is static.
-- Unified application (`services/app.py`): `GET /status`, `/status/data`, `/health`, `/health/live`, `/health/ready`. The status page reads the current mounted-service, task, Postgres, and Redis state when requested. The unified `/health/ready` response is not a substitute for the Core API dependency check.
+- Control Tower: standalone `GET /health/live`, `/health/ready`, WebSocket `/ws/fleet`, and `POST /rescue/{vehicle_id}`. The rescue route currently returns a stub and does not publish a rescue event. In the unified app, Control Tower is mounted under `/control-tower`.
+- Driver Gateway: standalone `POST /driver/events`, `GET /health/live`, and `/health/ready`. Event ingestion validates a driver JWT, takes driver identity from its claims, and publishes to `driver_events_stream`; it does not write to Postgres. In the unified app the gateway is mounted at `/driver`, so its declared child routes are under that mount.
+- Unified application (`services/app.py`): `/status` serves the status page and `/status/data` returns one current snapshot of mounted services, background tasks, Postgres, and Redis. It also exposes `/health`, `/health/live`, and `/health/ready`; the unified readiness response does not check dependencies.
 
 ## Data and processing state
 
-- `schema.sql` is the authoritative Postgres DDL, including PostGIS types, enums, constraints, and indexes. `db_models/models.py` is the ORM mapping used by Core API and Routing Worker; schema changes must keep it aligned with `schema.sql`.
-  - Core API auth, admin management, public tracking, customer order reads/claims, and customer order creation use the database. Order creation geocodes the submitted delivery address through configured Nominatim, writes a `placed` order with no warehouse plus its initial event in one transaction, then publishes `order.created`. Warehouse selection is reserved for the later merchant handoff; the eligibility policy is still open.
-  - Redis Streams are the event backbone. Core API publishes `order.created` to `orders_stream` after commit; Driver Gateway publishes validated events to `driver_events_stream`; the worker consumers and Control Tower telemetry consumer do not yet complete the processing loop.
-- Consequently, the full order → route → driver event → persisted delivery → live dashboard loop is not operational end to end.
-- Control Tower, Driver Gateway, and Simulator must not acquire Postgres access; Routing Worker is intended to own route and terminal delivery-event persistence.
+- `schema.sql` is the authoritative Postgres DDL. `db_models/models.py` mirrors it for Core API and Routing Worker.
+- Core API writes users, auth/session state, admin records, and order lifecycle data. Redis Streams carry `order.created` and driver events. Routing Worker is intended to persist routes/stops and terminal delivery events, but those consumers are not operational yet.
+- Therefore, the full order → route → driver event → persisted delivery → live dashboard loop is not operational end to end.
+- Control Tower, Driver Gateway, and Simulator do not access Postgres. Routing Worker is intended to own route and terminal delivery-event persistence.
 
-## Order intake decisions
+## Database migrations
 
-Customer order creation accepts seller, recipient name and phone, delivery address, parcel weight and volume, and an optional complete delivery window. Customer identity comes from the authenticated session. The configured Nominatim-compatible endpoint geocodes submitted addresses and reverse-geocodes coordinates for the request form. In line with the authoritative end-to-end lifecycle in `docs/end-to-end-system-flow.md`, Core API creates the order at `placed` with `warehouse_id = NULL`; order and initial `placed` event commit atomically, then Core API publishes `order.created` to `orders_stream`. Warehouse selection happens during the future merchant handoff, and its eligibility policy remains open. A publish failure is logged without undoing the committed order. Apply migrations `2026_10_19_01_order_status_values.sql` and then `2026_10_19_02_order_handoff_columns.sql` before deploying this code to an existing database.
+The repository has SQL migrations under `db/migrations/` and no automatic migration runner or migration-history table. Before applying migrations, inspect the target database's catalog and data so already-present objects and conflicting rows are handled safely.
+
+On 2026-10-19, the configured database `lastMileDB` was inspected and the missing order lifecycle changes were applied in separate transactions: `2026_10_19_01_order_status_values.sql`, then `2026_10_19_02_order_handoff_columns.sql`. The first migration adds `placed` and `sent` to `order_status`; the second makes `orders.warehouse_id` nullable, changes the default order status to `placed`, and updates the active-order index. Existing order rows were not rewritten.
+
+The same inspection confirmed that `2026_10_auth_rotation_idempotency.sql` changes (`orders.idempotency_key`, its partial unique index, and `refresh_tokens.rotated_at`) and `2026_10_admin.sql` objects were already present. The auth/idempotency migration is safe to rerun with `IF NOT EXISTS` guards. The migration files are the source for future environments; this database has no migration ledger recording application state.
 
 ## Frontend and panel serving
 
-- Public pages are in `frontend/public/<page>/`; shared assets are in `frontend/shared/`.
-- Admin's separate page files and assets are in `frontend/core-api/admin/`. Other role panels are in `frontend/core-api/<role>/`.
-- `services/core_api/app/panels.py` serves panel files through role checks. The `frontend/core-api/` tree must not be exposed through a general static mount.
-- Control Tower and Driver App frontends remain in `frontend/control-tower/` and `frontend/driver-app/`.
-
-## Run/deployment configuration caveat
-
-The Render blueprint starts the Routing Worker and Simulator with `python -m` because they are runnable processes with `main()` and no ASGI `app`. The Core API, Control Tower, and Driver Gateway expose ASGI apps.
+- Public pages live under `frontend/public/<page>/`; shared assets live under `frontend/shared/`.
+- Customer HTML and assets live under `frontend/core-api/customer/` and are served through customer-authenticated handlers.
+- Admin's seven HTML pages and assets live under `frontend/core-api/admin/`; its pages are separately addressable. Other role panels live under `frontend/core-api/<role>/`.
+- `services/core_api/app/panels.py` checks the current database user and role before returning private panel pages/assets. `frontend/core-api/` must not be exposed through a general static mount.
+- Control Tower and Driver App frontends remain under `frontend/control-tower/` and `frontend/driver-app/`.
 
 ## Verification scope
 
-This document records source inspection, not a claim that external services (Postgres, Redis, Neon, Render, MinIO, OSRM, VROOM, or Nominatim) are reachable. Runtime behavior depends on their configured environment and availability.
+The migration state above was checked against the configured database catalog before and after application. It does not claim that Redis, Render, MinIO, OSRM, VROOM, or Nominatim are reachable or that the end-to-end routing/delivery workflow is operational.
