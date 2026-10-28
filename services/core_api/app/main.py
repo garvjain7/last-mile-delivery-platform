@@ -18,6 +18,7 @@ from services.core_api.app.customer.router import router as customer_router
 from services.core_api.app.tracking.router import limiter as tracking_limiter
 from services.core_api.app.tracking.router import router as tracking_router
 from services.core_api.app.staff.router import router as staff_router
+from services.core_api.app.handoff.router import router as handoff_router
 from services.core_api.app.home.router import router as home_router
 from services.core_api.app.admin.deps import require_admin
 from services.core_api.app.admin.security import csrf_check
@@ -124,6 +125,7 @@ app.include_router(auth_router, prefix="/auth", tags=["Auth"])
 app.include_router(orders_router, prefix="/orders", tags=["Orders"])
 app.include_router(customer_router)
 app.include_router(staff_router, prefix="/staff", tags=["Staff"])
+app.include_router(handoff_router)
 admin_router = APIRouter(
     prefix="/api/admin",
     dependencies=[Depends(require_admin), Depends(csrf_check)],
