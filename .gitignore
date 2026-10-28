@@ -43,3 +43,7 @@ ENV/
 minio_data/
 postgres_data/
 redis_data/
+
+# Downloaded source datasets and generated build outputs
+data/raw/
+data/build/
