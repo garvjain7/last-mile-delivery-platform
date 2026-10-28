@@ -1,0 +1,166 @@
+@prefix lm:     <https://lastmile.example.org/ontology#> .
+@prefix owl:    <http://www.w3.org/2002/07/owl#> .
+@prefix rdf:    <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:    <http://www.w3.org/2001/XMLSchema#> .
+@prefix skos:   <http://www.w3.org/2004/02/skos/core#> .
+@prefix schema: <https://schema.org/> .
+@prefix geo:    <http://www.opengis.net/ont/geosparql#> .
+@prefix time:   <http://www.w3.org/2006/time#> .
+@prefix prov:   <http://www.w3.org/ns/prov#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+
+# ---------------------------------------------------------------------------
+# Last-Mile Delivery ontology (prototype).
+#
+# Design rules:
+#  * Reuse W3C/OGC vocabularies instead of inventing terms:
+#      schema.org (business objects), GeoSPARQL (locations), OWL-Time (windows),
+#      PROV-O (where every fact came from), SKOS (status vocabularies).
+#  * One class/property per schema.sql table/column; the local name of each
+#    lm: property equals the schema.sql column name (AGENTS.md naming rule), so
+#    KG -> SQL materialisation is mechanical.
+#  * The order lifecycle is data (SKOS concepts + lm:allowedNext), so SHACL
+#    can check every recorded transition against it.
+# ---------------------------------------------------------------------------
+
+<https://lastmile.example.org/ontology> a owl:Ontology ;
+    rdfs:label "Last-Mile Delivery Orchestration ontology" ;
+    owl:versionInfo "0.1.0" ;
+    dcterms:source <https://registry.opendata.aws/amazon-last-mile-challenges/> .
+
+# ---- Parties ---------------------------------------------------------------
+lm:Merchant   a owl:Class ; rdfs:subClassOf schema:Organization ; rdfs:comment "Seller whose parcels are delivered (schema.sql: merchants)." .
+lm:User       a owl:Class ; rdfs:subClassOf schema:Person ;       rdfs:comment "Platform account (users)." .
+lm:Customer   a owl:Class ; rdfs:subClassOf lm:User .
+lm:Driver     a owl:Class ; rdfs:subClassOf lm:User ;             rdfs:comment "users + drivers row." .
+lm:Admin      a owl:Class ; rdfs:subClassOf lm:User .
+lm:MerchantUser a owl:Class ; rdfs:subClassOf lm:User .
+
+# ---- Physical network ------------------------------------------------------
+lm:Warehouse  a owl:Class ; rdfs:subClassOf schema:Place , geo:Feature ; rdfs:comment "Delivery station / hub (warehouses); PRD 'Facility'." .
+lm:Vehicle    a owl:Class ; rdfs:subClassOf schema:Vehicle .
+lm:DeliveryLocation a owl:Class ; rdfs:subClassOf schema:Place , geo:Feature ; rdfs:comment "A drop-off point; several parcels may share one." .
+
+# ---- Work --------------------------------------------------------------------
+lm:Order      a owl:Class ; rdfs:subClassOf schema:Order , schema:ParcelDelivery ; rdfs:comment "One parcel to one recipient (orders)." .
+lm:Route      a owl:Class ; rdfs:subClassOf prov:Plan ;     rdfs:comment "Planned vehicle tour from one warehouse (routes)." .
+lm:RouteStop  a owl:Class ;                                   rdfs:comment "One order's visit within a route (route_stops)." .
+lm:OrderStatusChange a owl:Class ; rdfs:subClassOf prov:Activity ; rdfs:comment "Append-only history row (order_events)." .
+lm:DeliveryAttempt   a owl:Class ; rdfs:subClassOf prov:Activity ; rdfs:comment "Outcome of arriving at a stop (PRD DeliveryAttempt; missing from schema.sql)." .
+lm:DeliveryWindow    a owl:Class ; rdfs:subClassOf time:ProperInterval .
+
+# ---- Controlled vocabularies (SKOS) ---------------------------------------
+lm:OrderStatus a skos:ConceptScheme ; rdfs:label "order_status" .
+lm:placed           a skos:Concept ; skos:inScheme lm:OrderStatus ; skos:notation "placed" ;           lm:allowedNext lm:sent , lm:cancelled .
+lm:sent             a skos:Concept ; skos:inScheme lm:OrderStatus ; skos:notation "sent" ;             lm:allowedNext lm:pending , lm:cancelled .
+lm:pending          a skos:Concept ; skos:inScheme lm:OrderStatus ; skos:notation "pending" ;          lm:allowedNext lm:assigned , lm:cancelled .
+lm:assigned         a skos:Concept ; skos:inScheme lm:OrderStatus ; skos:notation "assigned" ;         lm:allowedNext lm:out_for_delivery , lm:pending .
+lm:out_for_delivery a skos:Concept ; skos:inScheme lm:OrderStatus ; skos:notation "out_for_delivery" ; lm:allowedNext lm:delivered , lm:attempt_failed , lm:pending .
+lm:attempt_failed   a skos:Concept ; skos:inScheme lm:OrderStatus ; skos:notation "attempt_failed" ;   lm:allowedNext lm:pending , lm:returned .
+lm:delivered        a skos:Concept ; skos:inScheme lm:OrderStatus ; skos:notation "delivered" ;        lm:terminal true .
+lm:returned         a skos:Concept ; skos:inScheme lm:OrderStatus ; skos:notation "returned" ;         lm:terminal true .
+lm:cancelled        a skos:Concept ; skos:inScheme lm:OrderStatus ; skos:notation "cancelled" ;        lm:terminal true .
+
+lm:allowedNext a owl:ObjectProperty ; rdfs:domain skos:Concept ; rdfs:range skos:Concept .
+lm:terminal    a owl:DatatypeProperty ; rdfs:range xsd:boolean .
+
+lm:StopStatus a skos:ConceptScheme ; rdfs:label "stop_status" .
+lm:stop_pending   a skos:Concept ; skos:inScheme lm:StopStatus ; skos:notation "pending" .
+lm:stop_delivered a skos:Concept ; skos:inScheme lm:StopStatus ; skos:notation "delivered" .
+lm:stop_failed    a skos:Concept ; skos:inScheme lm:StopStatus ; skos:notation "failed" .
+lm:stop_skipped   a skos:Concept ; skos:inScheme lm:StopStatus ; skos:notation "skipped" .
+
+lm:RouteStatus a skos:ConceptScheme ; rdfs:label "route_status" .
+lm:route_planned     a skos:Concept ; skos:inScheme lm:RouteStatus ; skos:notation "planned" .
+lm:route_in_progress a skos:Concept ; skos:inScheme lm:RouteStatus ; skos:notation "in_progress" .
+lm:route_completed   a skos:Concept ; skos:inScheme lm:RouteStatus ; skos:notation "completed" .
+lm:route_cancelled   a skos:Concept ; skos:inScheme lm:RouteStatus ; skos:notation "cancelled" .
+
+lm:FailureReason a skos:ConceptScheme ; rdfs:label "failure_reason" .
+lm:recipient_unavailable a skos:Concept ; skos:inScheme lm:FailureReason ; skos:notation "recipient_unavailable" .
+lm:wrong_address         a skos:Concept ; skos:inScheme lm:FailureReason ; skos:notation "wrong_address" .
+lm:refused               a skos:Concept ; skos:inScheme lm:FailureReason ; skos:notation "refused" .
+lm:other                 a skos:Concept ; skos:inScheme lm:FailureReason ; skos:notation "other" .
+
+lm:VehicleType a skos:ConceptScheme ; rdfs:label "vehicle_type" .
+lm:two_wheeler   a skos:Concept ; skos:inScheme lm:VehicleType ; skos:notation "two_wheeler" .
+lm:three_wheeler a skos:Concept ; skos:inScheme lm:VehicleType ; skos:notation "three_wheeler" .
+lm:van           a skos:Concept ; skos:inScheme lm:VehicleType ; skos:notation "van" .
+lm:light_truck   a skos:Concept ; skos:inScheme lm:VehicleType ; skos:notation "light_truck" .
+
+# ---- Object properties (names = schema.sql FK columns) ---------------------
+lm:merchant   a owl:ObjectProperty , owl:FunctionalProperty ; rdfs:domain lm:Order ; rdfs:range lm:Merchant .
+lm:warehouse  a owl:ObjectProperty , owl:FunctionalProperty ; rdfs:range lm:Warehouse ; rdfs:comment "orders.warehouse_id / routes.warehouse_id (PRD: pickup_facility_id)." .
+lm:customer   a owl:ObjectProperty , owl:FunctionalProperty ; rdfs:domain lm:Order ; rdfs:range lm:Customer .
+lm:deliveryLocation a owl:ObjectProperty , owl:FunctionalProperty ; rdfs:domain lm:Order ; rdfs:range lm:DeliveryLocation .
+lm:window     a owl:ObjectProperty , owl:FunctionalProperty ; rdfs:domain lm:Order ; rdfs:range lm:DeliveryWindow .
+lm:status     a owl:ObjectProperty , owl:FunctionalProperty ; rdfs:range skos:Concept .
+lm:driver     a owl:ObjectProperty , owl:FunctionalProperty ; rdfs:range lm:Driver .
+lm:vehicle    a owl:ObjectProperty , owl:FunctionalProperty ; rdfs:range lm:Vehicle .
+lm:vehicleType a owl:ObjectProperty , owl:FunctionalProperty ; rdfs:domain lm:Vehicle ; rdfs:range skos:Concept .
+lm:route      a owl:ObjectProperty , owl:FunctionalProperty ; rdfs:domain lm:RouteStop ; rdfs:range lm:Route .
+lm:order      a owl:ObjectProperty , owl:FunctionalProperty ; rdfs:range lm:Order .
+lm:routeStop  a owl:ObjectProperty ; rdfs:range lm:RouteStop .
+lm:fromStatus a owl:ObjectProperty ; rdfs:domain lm:OrderStatusChange ; rdfs:range skos:Concept .
+lm:toStatus   a owl:ObjectProperty ; rdfs:domain lm:OrderStatusChange ; rdfs:range skos:Concept .
+lm:failureReason a owl:ObjectProperty ; rdfs:range skos:Concept .
+lm:memberOf   a owl:ObjectProperty ; rdfs:domain lm:MerchantUser ; rdfs:range lm:Merchant .
+
+# ---- Datatype properties --------------------------------------------------
+lm:code                 a owl:DatatypeProperty ; rdfs:range xsd:string .
+lm:name                 a owl:DatatypeProperty ; rdfs:subPropertyOf schema:name ; rdfs:range xsd:string .
+lm:address              a owl:DatatypeProperty ; rdfs:range xsd:string .
+lm:email                a owl:DatatypeProperty ; rdfs:subPropertyOf schema:email ; rdfs:range xsd:string .
+lm:phone                a owl:DatatypeProperty ; rdfs:subPropertyOf schema:telephone ; rdfs:range xsd:string .
+lm:merchant_order_ref   a owl:DatatypeProperty ; rdfs:range xsd:string .
+lm:recipient_name       a owl:DatatypeProperty ; rdfs:range xsd:string .
+lm:recipient_phone      a owl:DatatypeProperty ; rdfs:range xsd:string .
+lm:delivery_address     a owl:DatatypeProperty ; rdfs:range xsd:string .
+lm:weight_kg            a owl:DatatypeProperty ; rdfs:range xsd:decimal .
+lm:volume_m3            a owl:DatatypeProperty ; rdfs:range xsd:decimal .
+lm:planned_service_time_s a owl:DatatypeProperty ; rdfs:range xsd:integer ; rdfs:comment "Not in schema.sql — needed by VROOM (service)." .
+lm:max_weight_kg        a owl:DatatypeProperty ; rdfs:range xsd:decimal .
+lm:max_volume_m3        a owl:DatatypeProperty ; rdfs:range xsd:decimal .
+lm:registration_number  a owl:DatatypeProperty ; rdfs:range xsd:string .
+lm:sequence             a owl:DatatypeProperty ; rdfs:range xsd:positiveInteger .
+lm:planned_arrival_at   a owl:DatatypeProperty ; rdfs:range xsd:dateTime .
+lm:arrived_at           a owl:DatatypeProperty ; rdfs:range xsd:dateTime .
+lm:completed_at         a owl:DatatypeProperty ; rdfs:range xsd:dateTime .
+lm:started_at           a owl:DatatypeProperty ; rdfs:range xsd:dateTime .
+lm:created_at           a owl:DatatypeProperty ; rdfs:range xsd:dateTime .
+lm:occurred_at          a owl:DatatypeProperty ; rdfs:range xsd:dateTime .
+lm:shift_start          a owl:DatatypeProperty ; rdfs:range xsd:dateTime ; rdfs:comment "Not in schema.sql (gap: driver hours)." .
+lm:shift_end            a owl:DatatypeProperty ; rdfs:range xsd:dateTime .
+lm:route_quality        a owl:DatatypeProperty ; rdfs:range xsd:string ; rdfs:comment "Amazon route_score High/Medium/Low." .
+lm:zone_id              a owl:DatatypeProperty ; rdfs:range xsd:string .
+lm:scenario             a owl:DatatypeProperty ; rdfs:range xsd:string ; rdfs:comment "Edge-case tag for hand-built test scenarios." .
+lm:isActive             a owl:DatatypeProperty ; rdfs:range xsd:boolean .
+
+# India addressing, payment and fleet (see db/migrations/2026_10_28_01_*).
+lm:pincode          a owl:DatatypeProperty ; rdfs:range xsd:string ; rdfs:comment "6-digit India Post PIN; must exist in the India Post directory." .
+lm:locality         a owl:DatatypeProperty ; rdfs:range xsd:string ; rdfs:comment "Name of an India Post office serving the PIN." .
+lm:landmark         a owl:DatatypeProperty ; rdfs:range xsd:string ; rdfs:comment "Nearest named OSM landmark (Indian addresses are landmark-based)." .
+lm:digipin          a owl:DatatypeProperty ; rdfs:range xsd:string ; rdfs:comment "India Post DIGIPIN (~4 m grid code) of the delivery point." .
+lm:pin_confidence   a owl:DatatypeProperty ; rdfs:range xsd:decimal ; rdfs:comment "Share of nearby OSM postcode tags agreeing with the chosen PIN." .
+lm:pin_source       a owl:DatatypeProperty ; rdfs:range xsd:string .
+lm:payment_mode     a owl:DatatypeProperty ; rdfs:range xsd:string ; rdfs:comment "prepaid | cod" .
+lm:cod_amount_inr   a owl:DatatypeProperty ; rdfs:range xsd:decimal .
+lm:service_radius_m a owl:DatatypeProperty ; rdfs:range xsd:integer .
+lm:driverStatus     a owl:DatatypeProperty ; rdfs:range xsd:string .
+lm:outcome          a owl:DatatypeProperty ; rdfs:range xsd:string ; rdfs:comment "delivered | failed" .
+lm:client_event_id  a owl:DatatypeProperty ; rdfs:range xsd:string .
+lm:sequenceNo       a owl:DatatypeProperty ; rdfs:range xsd:integer ; rdfs:comment "Position of an event in its order's history." .
+lm:isLatest         a owl:DatatypeProperty ; rdfs:range xsd:boolean ; rdfs:comment "Marks the event that defines the order's current status." .
+lm:staffOf          a owl:ObjectProperty ; rdfs:range lm:Warehouse .
+lm:plannedLocation  a owl:ObjectProperty ; rdfs:domain lm:RouteStop .
+
+# Provenance: every generated entity says whether a fact was observed in a
+# source dataset or derived by a documented rule.
+lm:observedFrom a owl:ObjectProperty ; rdfs:subPropertyOf prov:wasDerivedFrom .
+lm:derivationRule a owl:DatatypeProperty ; rdfs:range xsd:string .
+
+lm:AmazonLMRC2021 a prov:Entity ;
+    rdfs:label "Amazon Last Mile Routing Research Challenge 2021 (training set)" ;
+    dcterms:license <https://creativecommons.org/licenses/by-nc/4.0/> ;
+    dcterms:bibliographicCitation "Merchán, D. et al. (2022). 2021 Amazon Last Mile Routing Research Challenge: Data Set. Transportation Science." .

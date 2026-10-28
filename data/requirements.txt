@@ -1,0 +1,7 @@
+# Extra dependencies for the test-data pipeline (data/). Install on top of the
+# root requirements.txt:  pip install -r data/requirements.txt
+# osmium-tool (CLI) is also required: brew install osmium-tool
+rdflib==7.6.0
+pyshacl==0.40.1
+Faker==40.43.0
+pyvroom==1.15.2

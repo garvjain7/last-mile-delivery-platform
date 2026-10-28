@@ -1,0 +1,251 @@
+@prefix lm:     <https://lastmile.example.org/ontology#> .
+@prefix sh:     <http://www.w3.org/ns/shacl#> .
+@prefix xsd:    <http://www.w3.org/2001/XMLSchema#> .
+@prefix rdf:    <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix skos:   <http://www.w3.org/2004/02/skos/core#> .
+@prefix geo:    <http://www.opengis.net/ont/geosparql#> .
+@prefix time:   <http://www.w3.org/2006/time#> .
+
+# SHACL data contract for the Last-Mile knowledge graph.
+#
+# Two layers, for speed on ~400k-triple graphs:
+#   1. Node shapes (SHACL Core) — per-entity field rules: cardinality,
+#      datatype, pattern, allowed values. Evaluated natively, fast.
+#   2. lm:GraphRules — cross-entity business rules written as SPARQL that
+#      run ONCE over the whole graph (focus node lm:Dataset); each result's
+#      sh:value is the offending entity. Running these per focus node costs
+#      one SPARQL query per entity and does not scale.
+# A graph that conforms loads into Postgres without violating schema.sql
+# and also satisfies rules schema.sql cannot express.
+
+lm:PrefixDecl sh:declare
+    [ sh:prefix "lm" ;   sh:namespace "https://lastmile.example.org/ontology#"^^xsd:anyURI ] ,
+    [ sh:prefix "skos" ; sh:namespace "http://www.w3.org/2004/02/skos/core#"^^xsd:anyURI ] ,
+    [ sh:prefix "geo" ;  sh:namespace "http://www.opengis.net/ont/geosparql#"^^xsd:anyURI ] ,
+    [ sh:prefix "time" ; sh:namespace "http://www.w3.org/2006/time#"^^xsd:anyURI ] ,
+    [ sh:prefix "rdf" ;  sh:namespace "http://www.w3.org/1999/02/22-rdf-syntax-ns#"^^xsd:anyURI ] .
+
+# =============================================================== 1. Node shapes
+lm:GeoFeatureShape a sh:NodeShape ;
+    sh:targetClass lm:Warehouse , lm:DeliveryLocation ;
+    sh:property [ sh:path geo:hasGeometry ; sh:minCount 1 ; sh:maxCount 1 ; sh:node lm:PointShape ] .
+
+lm:PointShape a sh:NodeShape ;
+    sh:property [ sh:path geo:asWKT ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype geo:wktLiteral ;
+                  sh:pattern "^POINT\\(-?[0-9]+(\\.[0-9]+)? -?[0-9]+(\\.[0-9]+)?\\)$" ;
+                  sh:message "Geometry must be a WKT POINT(lon lat) in EPSG:4326." ] .
+
+lm:WarehouseShape a sh:NodeShape ;
+    sh:targetClass lm:Warehouse ;
+    sh:property [ sh:path lm:code ; sh:minCount 1 ; sh:maxCount 1 ] ;
+    sh:property [ sh:path lm:name ; sh:minCount 1 ; sh:maxCount 1 ] ;
+    sh:property [ sh:path lm:address ; sh:minCount 1 ; sh:maxCount 1 ] ;
+    sh:property [ sh:path lm:isActive ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:boolean ] ;
+    sh:property [ sh:path lm:pincode ; sh:maxCount 1 ; sh:pattern "^[1-9][0-9]{5}$" ] .
+
+lm:VehicleShape a sh:NodeShape ;
+    sh:targetClass lm:Vehicle ;
+    sh:property [ sh:path lm:registration_number ; sh:minCount 1 ; sh:maxCount 1 ] ;
+    sh:property [ sh:path lm:vehicleType ; sh:minCount 1 ; sh:maxCount 1 ;
+                  sh:in ( lm:two_wheeler lm:three_wheeler lm:van lm:light_truck ) ] ;
+    sh:property [ sh:path lm:max_weight_kg ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:decimal ; sh:minExclusive 0 ] ;
+    sh:property [ sh:path lm:max_volume_m3 ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:decimal ; sh:minExclusive 0 ] .
+
+lm:UserShape a sh:NodeShape ;
+    sh:targetClass lm:User ;
+    sh:property [ sh:path lm:email ; sh:minCount 1 ; sh:maxCount 1 ; sh:pattern "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$" ] ;
+    sh:property [ sh:path lm:phone ; sh:maxCount 1 ; sh:pattern "^\\+[1-9][0-9]{7,14}$" ] ;
+    sh:property [ sh:path lm:name ; sh:minCount 1 ; sh:maxCount 1 ] ;
+    sh:property [ sh:path lm:role ; sh:minCount 1 ;
+                  sh:in ( "customer" "merchant" "dispatcher" "driver" "fleet_manager" "admin" ) ] .
+
+lm:DriverShape a sh:NodeShape ;
+    sh:targetClass lm:Driver ;
+    sh:property [ sh:path lm:vehicle ; sh:maxCount 1 ; sh:class lm:Vehicle ] ;
+    sh:property [ sh:path lm:warehouse ; sh:minCount 1 ; sh:maxCount 1 ; sh:class lm:Warehouse ;
+                  sh:message "Every driver is based at exactly one warehouse." ] ;
+    sh:property [ sh:path lm:driverStatus ; sh:minCount 1 ;
+                  sh:in ( "pending" "offline" "available" "on_route" "rejected" ) ] .
+
+lm:MerchantShape a sh:NodeShape ;
+    sh:targetClass lm:Merchant ;
+    sh:property [ sh:path lm:name ; sh:minCount 1 ; sh:maxCount 1 ] ;
+    sh:property [ sh:path [ sh:inversePath lm:memberOf ] ; sh:minCount 1 ;
+                  sh:message "Every merchant has at least one merchant user who can log in." ] .
+
+lm:OrderShape a sh:NodeShape ;
+    sh:targetClass lm:Order ;
+    sh:property [ sh:path lm:merchant ; sh:minCount 1 ; sh:maxCount 1 ; sh:class lm:Merchant ] ;
+    sh:property [ sh:path lm:merchant_order_ref ; sh:minCount 1 ; sh:maxCount 1 ] ;
+    sh:property [ sh:path lm:tracking_token ; sh:minCount 1 ; sh:maxCount 1 ; sh:pattern "^[A-Z]{10}$" ] ;
+    sh:property [ sh:path lm:customer ; sh:maxCount 1 ; sh:class lm:Customer ] ;
+    sh:property [ sh:path lm:recipient_name ; sh:minCount 1 ; sh:maxCount 1 ; sh:minLength 2 ] ;
+    sh:property [ sh:path lm:recipient_phone ; sh:minCount 1 ; sh:maxCount 1 ; sh:pattern "^\\+[1-9][0-9]{7,14}$" ] ;
+    sh:property [ sh:path lm:delivery_address ; sh:minCount 1 ; sh:maxCount 1 ; sh:minLength 15 ] ;
+    sh:property [ sh:path lm:deliveryLocation ; sh:minCount 1 ; sh:maxCount 1 ; sh:class lm:DeliveryLocation ] ;
+    sh:property [ sh:path lm:pincode ; sh:minCount 1 ; sh:maxCount 1 ; sh:pattern "^[1-9][0-9]{5}$" ;
+                  sh:message "Indian orders need a valid 6-digit PIN code." ] ;
+    sh:property [ sh:path lm:locality ; sh:minCount 1 ; sh:maxCount 1 ] ;
+    sh:property [ sh:path lm:landmark ; sh:maxCount 1 ] ;
+    sh:property [ sh:path lm:digipin ; sh:minCount 1 ; sh:maxCount 1 ; sh:pattern "^[2-9CJKLMPFT]{10}$" ] ;
+    sh:property [ sh:path lm:weight_kg ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:decimal ; sh:minExclusive 0 ] ;
+    sh:property [ sh:path lm:volume_m3 ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:decimal ; sh:minExclusive 0 ] ;
+    sh:property [ sh:path lm:planned_service_time_s ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:integer ; sh:minInclusive 0 ] ;
+    sh:property [ sh:path lm:payment_mode ; sh:minCount 1 ; sh:maxCount 1 ; sh:in ( "prepaid" "cod" ) ] ;
+    sh:property [ sh:path lm:cod_amount_inr ; sh:maxCount 1 ; sh:datatype xsd:decimal ; sh:minExclusive 0 ] ;
+    sh:property [ sh:path lm:window ; sh:maxCount 1 ] ;
+    sh:property [ sh:path lm:status ; sh:minCount 1 ; sh:maxCount 1 ;
+                  sh:in ( lm:placed lm:sent lm:pending lm:assigned lm:out_for_delivery lm:delivered lm:attempt_failed lm:returned lm:cancelled ) ] ;
+    sh:property [ sh:path lm:created_at ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:dateTime ] ;
+    sh:property [ sh:path [ sh:inversePath lm:order ] ; sh:minCount 1 ;
+                  sh:message "Every order has at least one history event (order_events)." ] ;
+    sh:or ( [ sh:path lm:observedFrom ; sh:minCount 1 ] [ sh:path lm:derivationRule ; sh:minCount 1 ] ) .
+
+lm:OrderStatusChangeShape a sh:NodeShape ;
+    sh:targetClass lm:OrderStatusChange ;
+    sh:property [ sh:path lm:order ; sh:minCount 1 ; sh:maxCount 1 ] ;
+    sh:property [ sh:path lm:toStatus ; sh:minCount 1 ; sh:maxCount 1 ] ;
+    sh:property [ sh:path lm:fromStatus ; sh:maxCount 1 ] ;
+    sh:property [ sh:path lm:occurred_at ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:dateTime ] .
+
+lm:RouteShape a sh:NodeShape ;
+    sh:targetClass lm:Route ;
+    sh:property [ sh:path lm:warehouse ; sh:minCount 1 ; sh:maxCount 1 ; sh:class lm:Warehouse ] ;
+    sh:property [ sh:path lm:driver ; sh:minCount 1 ; sh:maxCount 1 ; sh:class lm:Driver ] ;
+    sh:property [ sh:path lm:vehicle ; sh:minCount 1 ; sh:maxCount 1 ; sh:class lm:Vehicle ] ;
+    sh:property [ sh:path lm:status ; sh:minCount 1 ; sh:maxCount 1 ;
+                  sh:in ( lm:route_planned lm:route_in_progress lm:route_completed lm:route_cancelled ) ] ;
+    sh:property [ sh:path [ sh:inversePath lm:route ] ; sh:minCount 1 ; sh:message "Route has no stops." ] .
+
+lm:RouteStopShape a sh:NodeShape ;
+    sh:targetClass lm:RouteStop ;
+    sh:property [ sh:path lm:route ; sh:minCount 1 ; sh:maxCount 1 ] ;
+    sh:property [ sh:path lm:order ; sh:minCount 1 ; sh:maxCount 1 ] ;
+    sh:property [ sh:path lm:sequence ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:positiveInteger ] ;
+    sh:property [ sh:path lm:planned_arrival_at ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:dateTime ] ;
+    sh:property [ sh:path lm:status ; sh:minCount 1 ; sh:maxCount 1 ;
+                  sh:in ( lm:stop_pending lm:stop_delivered lm:stop_failed lm:stop_skipped ) ] .
+
+lm:DeliveryAttemptShape a sh:NodeShape ;
+    sh:targetClass lm:DeliveryAttempt ;
+    sh:property [ sh:path lm:order ; sh:minCount 1 ; sh:maxCount 1 ] ;
+    sh:property [ sh:path lm:routeStop ; sh:minCount 1 ; sh:maxCount 1 ] ;
+    sh:property [ sh:path lm:driver ; sh:minCount 1 ; sh:maxCount 1 ] ;
+    sh:property [ sh:path lm:outcome ; sh:minCount 1 ; sh:in ( "delivered" "failed" ) ] ;
+    sh:property [ sh:path lm:client_event_id ; sh:minCount 1 ; sh:maxCount 1 ] ;
+    sh:property [ sh:path lm:occurred_at ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:dateTime ] .
+
+# =============================================================== 2. Graph rules
+lm:GraphRules a sh:NodeShape ;
+    sh:targetNode lm:Dataset ;
+
+    # ---- Order lifecycle -------------------------------------------------
+    sh:sparql [ sh:message "Order status differs from its latest history event." ;
+        sh:select """SELECT $this ?value WHERE {
+            ?e lm:isLatest true ; lm:order ?value ; lm:toStatus ?t . ?value lm:status ?s . FILTER (?t != ?s) }""" ] ;
+    sh:sparql [ sh:message "Order has no latest history event." ;
+        sh:select """SELECT $this ?value WHERE {
+            ?value a lm:Order . OPTIONAL { ?e lm:order ?value ; lm:isLatest true } FILTER (!BOUND(?e)) }""" ] ;
+    sh:sparql [ sh:message "Order has more than one latest history event." ;
+        sh:select """SELECT $this ?value WHERE {
+            { SELECT $this ?value (COUNT(?e) AS ?n) WHERE { ?e lm:isLatest true ; lm:order ?value } GROUP BY $this ?value }
+            FILTER (?n > 1) }""" ] ;
+    sh:sparql [ sh:message "Illegal lifecycle transition (not in lm:allowedNext)." ;
+        sh:select """SELECT $this ?value WHERE {
+            ?value a lm:OrderStatusChange ; lm:fromStatus ?f ; lm:toStatus ?t .
+            FILTER NOT EXISTS { ?f lm:allowedNext ?t } }""" ] ;
+    sh:sparql [ sh:message "First history event must be (none) -> placed." ;
+        sh:select """SELECT $this ?value WHERE {
+            ?value a lm:OrderStatusChange ; lm:toStatus ?t .
+            FILTER NOT EXISTS { ?value lm:fromStatus ?any } FILTER (?t != lm:placed) }""" ] ;
+    sh:sparql [ sh:message "History chain broken: event's from_status is not the previous event's to_status." ;
+        sh:select """SELECT $this ?value WHERE {
+            ?value lm:order ?o ; lm:sequenceNo ?n ; lm:fromStatus ?f .
+            ?prev lm:order ?o ; lm:sequenceNo ?pn ; lm:toStatus ?pt .
+            FILTER (?pn = ?n - 1 && ?pt != ?f) }""" ] ;
+    sh:sparql [ sh:message "History events are not in time order." ;
+        sh:select """SELECT $this ?value WHERE {
+            ?value lm:order ?o ; lm:sequenceNo ?n ; lm:occurred_at ?t .
+            ?prev lm:order ?o ; lm:sequenceNo ?pn ; lm:occurred_at ?pt .
+            FILTER (?pn = ?n - 1 && ?pt > ?t) }""" ] ;
+    sh:sparql [ sh:message "Order past 'placed' must have a warehouse; a 'placed'/'cancelled' order must not." ;
+        sh:select """SELECT $this ?value WHERE {
+            ?value a lm:Order ; lm:status ?s . OPTIONAL { ?value lm:warehouse ?w }
+            FILTER ( (?s NOT IN (lm:placed, lm:cancelled) && !BOUND(?w)) || (?s IN (lm:placed, lm:cancelled) && BOUND(?w)) ) }""" ] ;
+    sh:sparql [ sh:message "Delivered/failed/returned order has no DeliveryAttempt." ;
+        sh:select """SELECT $this ?value WHERE {
+            ?value a lm:Order ; lm:status ?s . FILTER (?s IN (lm:delivered, lm:attempt_failed, lm:returned))
+            OPTIONAL { ?a lm:order ?value ; lm:outcome ?any } FILTER (!BOUND(?a)) }""" ] ;
+    sh:sparql [ sh:message "Delivered order has no successful attempt." ;
+        sh:select """SELECT $this ?value WHERE {
+            ?value a lm:Order ; lm:status lm:delivered .
+            OPTIONAL { ?a lm:order ?value ; lm:outcome "delivered" } FILTER (!BOUND(?a)) }""" ] ;
+    sh:sparql [ sh:message "Assigned/out_for_delivery order is not on a pending stop of an active route." ;
+        sh:select """SELECT $this ?value WHERE {
+            ?value a lm:Order ; lm:status ?s . FILTER (?s IN (lm:assigned, lm:out_for_delivery))
+            OPTIONAL { ?st lm:order ?value ; lm:status lm:stop_pending ; lm:route ?r .
+                       ?r lm:status ?rs . FILTER (?rs IN (lm:route_planned, lm:route_in_progress)) }
+            FILTER (!BOUND(?st)) }""" ] ;
+    sh:sparql [ sh:message "Order is on more than one pending stop of active routes." ;
+        sh:select """SELECT $this ?value WHERE {
+            { SELECT $this ?value (COUNT(?st) AS ?n) WHERE {
+                ?st lm:status lm:stop_pending ; lm:order ?value ; lm:route ?r .
+                ?r lm:status ?rs . FILTER (?rs IN (lm:route_planned, lm:route_in_progress)) } GROUP BY $this ?value }
+            FILTER (?n > 1) }""" ] ;
+    sh:sparql [ sh:message "Order is pending on an active route but its status is not assigned/out_for_delivery." ;
+        sh:select """SELECT $this ?value WHERE {
+            ?st a lm:RouteStop ; lm:order ?value ; lm:status lm:stop_pending ; lm:route ?r .
+            ?r lm:status ?rs . FILTER (?rs IN (lm:route_planned, lm:route_in_progress))
+            ?value lm:status ?s . FILTER (?s NOT IN (lm:assigned, lm:out_for_delivery)) }""" ] ;
+
+    # ---- India addressing & payment --------------------------------------
+    sh:sparql [ sh:message "COD order must have a COD amount; prepaid must not." ;
+        sh:select """SELECT $this ?value WHERE {
+            ?value a lm:Order ; lm:payment_mode ?m . OPTIONAL { ?value lm:cod_amount_inr ?a }
+            FILTER ( (?m = "cod") != BOUND(?a) ) }""" ] ;
+    sh:sparql [ sh:message "Same PIN code mapped to different locality names is fine, but a locality must not span PIN codes." ;
+        sh:select """SELECT $this ?value WHERE {
+            { SELECT $this ?value (COUNT(DISTINCT ?pin) AS ?n) WHERE { ?o a lm:Order ; lm:locality ?value ; lm:pincode ?pin . } GROUP BY $this ?value }
+            FILTER (?n > 1) }""" ] ;
+
+    # ---- Routes ------------------------------------------------------------
+    sh:sparql [ sh:message "Route load exceeds vehicle volume capacity." ;
+        sh:select """SELECT $this ?value WHERE {
+            { SELECT $this ?value (SUM(?v) AS ?load) (SAMPLE(?c) AS ?cap) WHERE {
+                ?value a lm:Route ; lm:vehicle/lm:max_volume_m3 ?c . ?st lm:route ?value ; lm:order/lm:volume_m3 ?v . } GROUP BY $this ?value }
+            FILTER (?load > ?cap) }""" ] ;
+    sh:sparql [ sh:message "Route load exceeds vehicle weight capacity." ;
+        sh:select """SELECT $this ?value WHERE {
+            { SELECT $this ?value (SUM(?w) AS ?load) (SAMPLE(?c) AS ?cap) WHERE {
+                ?value a lm:Route ; lm:vehicle/lm:max_weight_kg ?c . ?st lm:route ?value ; lm:order/lm:weight_kg ?w . } GROUP BY $this ?value }
+            FILTER (?load > ?cap) }""" ] ;
+    sh:sparql [ sh:message "Stop sequence is not contiguous 1..n." ;
+        sh:select """SELECT $this ?value WHERE {
+            { SELECT $this ?value (COUNT(?st) AS ?n) (MAX(?seq) AS ?mx) WHERE { ?st lm:route ?value ; lm:sequence ?seq . } GROUP BY $this ?value }
+            FILTER (?mx != ?n) }""" ] ;
+    sh:sparql [ sh:message "Order on a route belongs to a different warehouse." ;
+        sh:select """SELECT $this ?value WHERE {
+            ?r lm:warehouse ?w . ?st lm:route ?r ; lm:order ?value . ?value lm:warehouse ?ow . FILTER (?ow != ?w) }""" ] ;
+    sh:sparql [ sh:message "Route vehicle is not the driver's assigned vehicle." ;
+        sh:select """SELECT $this ?value WHERE {
+            ?value a lm:Route ; lm:driver ?d ; lm:vehicle ?v . ?d lm:vehicle ?dv . FILTER (?dv != ?v) }""" ] ;
+    sh:sparql [ sh:message "Driver has more than one active route." ;
+        sh:select """SELECT $this ?value WHERE {
+            { SELECT $this ?value (COUNT(?r) AS ?n) WHERE { ?r a lm:Route ; lm:driver ?value ; lm:status ?s .
+                FILTER (?s IN (lm:route_planned, lm:route_in_progress)) } GROUP BY $this ?value }
+            FILTER (?n > 1) }""" ] ;
+    sh:sparql [ sh:message "failed stop <=> failure reason present." ;
+        sh:select """SELECT $this ?value WHERE {
+            ?value a lm:RouteStop ; lm:status ?s . OPTIONAL { ?value lm:failureReason ?r }
+            FILTER ( (?s = lm:stop_failed) != BOUND(?r) ) }""" ] ;
+    sh:sparql [ sh:message "delivered/failed stop <=> completed_at present." ;
+        sh:select """SELECT $this ?value WHERE {
+            ?value a lm:RouteStop ; lm:status ?s . OPTIONAL { ?value lm:completed_at ?c }
+            FILTER ( (?s IN (lm:stop_delivered, lm:stop_failed)) != BOUND(?c) ) }""" ] ;
+    sh:sparql [ sh:message "Bulky parcel (side > 60 cm or > 10 kg) routed on a two-wheeler." ;
+        sh:select """SELECT $this ?value WHERE {
+            ?st lm:route ?r ; lm:order ?value . ?r lm:vehicle/lm:vehicleType lm:two_wheeler .
+            ?value lm:weight_kg ?w . FILTER (?w > 10) }""" ] .
+
+lm:Dataset a lm:DatasetRoot .
