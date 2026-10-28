@@ -66,7 +66,7 @@ async def load_hub(conn, hub_id):
     return orders, riders
 
 
-def solve(hub, orders, riders, start_at):
+def solve(hub, orders, riders, start_at, ignore_shifts=False):
     """Return (routes, skipped) where routes = [(rider, [(order, arrival_dt)])]."""
     skipped, jobs_src = [], []
     for o in orders:
@@ -89,6 +89,9 @@ def solve(hub, orders, riders, start_at):
         sh0 = datetime.combine(day, r["shift_start"], hub["tz"]) if r["shift_start"] else start_at
         sh1 = datetime.combine(day, r["shift_end"], hub["tz"]) if r["shift_end"] else start_at + timedelta(hours=10)
         sh0 = max(sh0, start_at)
+        if ignore_shifts:
+            # Simulation runs at any hour; treat every free rider as on shift.
+            sh0, sh1 = start_at, start_at + timedelta(hours=8)
         if sh1 <= sh0:
             continue
         vehicles.append(vroom.Vehicle(
@@ -150,7 +153,7 @@ async def write(conn, hub_id, routes, now):
                 VALUES ($1, 'pending', 'assigned', $2, $3)""", o["id"], stop_id, now)
 
 
-async def main(dry_run, at):
+async def main(dry_run, at, hub_code=None, ignore_shifts=False):
     load_dotenv()
     url = re.sub(r"\?.*$", "?sslmode=require", os.environ["DATABASE_URL"].replace("postgresql+asyncpg://", "postgresql://"))
     conn = await asyncpg.connect(url)
@@ -159,12 +162,12 @@ async def main(dry_run, at):
     totals = defaultdict(int)
     try:
         hubs = await conn.fetch("""SELECT id, code, ST_Y(location::geometry) lat, ST_X(location::geometry) lon
-                                   FROM warehouses WHERE is_active ORDER BY code""")
+                                   FROM warehouses WHERE is_active AND ($1::text IS NULL OR code = $1) ORDER BY code""", hub_code)
         for h in hubs:
             hub = dict(h, tz=ZoneInfo("Asia/Kolkata"))
             async with conn.transaction():
                 orders, riders = await load_hub(conn, h["id"])
-                routes, skipped = solve(hub, orders, riders, now)
+                routes, skipped = solve(hub, orders, riders, now, ignore_shifts)
                 if not dry_run:
                     await write(conn, h["id"], routes, now)
             n = sum(len(s) for _, s, _, _ in routes)
@@ -187,5 +190,7 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--at", type=datetime.fromisoformat, help="plan as of this time (ISO, with offset); default now")
+    ap.add_argument("--hub", help="plan only this warehouse code, e.g. RPR-URLA")
+    ap.add_argument("--ignore-shifts", action="store_true", help="simulation: every free rider counts as on shift")
     a = ap.parse_args()
-    asyncio.run(main(a.dry_run, a.at))
+    asyncio.run(main(a.dry_run, a.at, a.hub, a.ignore_shifts))
