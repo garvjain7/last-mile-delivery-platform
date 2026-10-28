@@ -41,13 +41,17 @@ log = logging.getLogger("routing-worker.terminal")
 
 
 async def apply(conn, ev):
-    """Apply one event inside the caller's transaction. Returns a short outcome string."""
+    """Apply one event inside the caller's transaction.
+    Returns (outcome, detail): a short outcome for the summary and a line saying
+    which parcel, rider and rows it touched."""
     event_id = uuid.UUID(ev["event_id"])
     fresh = await conn.fetchval(
         "INSERT INTO processed_events (event_id, event_type) VALUES ($1, $2) ON CONFLICT DO NOTHING RETURNING event_id",
         event_id, ev["event_type"])
     if fresh is None:
-        return "duplicate, ignored"
+        first = await conn.fetchval("SELECT processed_at FROM processed_events WHERE event_id = $1", event_id)
+        return "duplicate, ignored", (f"event {str(event_id)[:8]} was already recorded at {first:%H:%M:%S} "
+                                      "(found in processed_events); nothing changed")
     at = datetime.fromisoformat(ev["timestamp"])
     driver_id = uuid.UUID(ev["driver_id"])
 
@@ -57,7 +61,7 @@ async def apply(conn, ev):
             UPDATE routes SET status = 'in_progress', started_at = $3, updated_at = now()
             WHERE id = $1 AND driver_id = $2 AND status = 'planned'""", route_id, driver_id, at)
         if updated.endswith(" 0"):
-            return "route not planned for this driver, ignored"
+            return "route not planned for this driver, ignored", f"route {str(route_id)[:8]} is not planned for this rider"
         orders = await conn.fetch("""
             UPDATE orders o SET status = 'out_for_delivery', updated_at = now()
             FROM route_stops s WHERE s.route_id = $1 AND s.order_id = o.id AND o.status = 'assigned'
@@ -67,15 +71,20 @@ async def apply(conn, ev):
             VALUES ($1, 'assigned', 'out_for_delivery', $2, $3, $4)""",
             [(o["id"], o["stop_id"], driver_id, at) for o in orders])
         await conn.execute("UPDATE drivers SET status = 'on_route', updated_at = now() WHERE user_id = $1", driver_id)
-        return f"route started, {len(orders)} parcels out for delivery"
+        rider = await conn.fetchval("SELECT email FROM users WHERE id = $1", driver_id)
+        return (f"route started, {len(orders)} parcels out for delivery",
+                f"rider {rider.split('@')[0]} · route {str(route_id)[:8]} planned -> in_progress · "
+                f"{len(orders)} orders assigned -> out_for_delivery")
 
     delivered = ev["event_type"] == "delivery.completed"
     stop = await conn.fetchrow("""
-        SELECT s.id, s.order_id FROM route_stops s JOIN routes r ON r.id = s.route_id
+        SELECT s.id, s.order_id, s.sequence, o.tracking_token FROM route_stops s
+        JOIN routes r ON r.id = s.route_id JOIN orders o ON o.id = s.order_id
         WHERE s.order_id = $1 AND r.driver_id = $2 AND r.status = 'in_progress' AND s.status = 'pending'
         FOR UPDATE OF s""", uuid.UUID(ev["order_id"]), driver_id)
     if stop is None:
-        return "no pending stop for this driver and order, ignored"
+        return ("no pending stop for this driver and order, ignored",
+                f"order {ev['order_id'][:8]} is not a pending stop on this rider's active route")
     reason = None if delivered else (ev.get("failure_reason") if ev.get("failure_reason") in FAILURE_REASONS else "other")
     await conn.execute("""
         UPDATE route_stops SET status = $2, failure_reason = $3::failure_reason, arrived_at = $4, completed_at = $4, updated_at = now()
@@ -95,7 +104,10 @@ async def apply(conn, ev):
         UPDATE routes r SET status = 'completed', completed_at = $2, updated_at = now()
         WHERE r.id = (SELECT route_id FROM route_stops WHERE id = $1)
           AND NOT EXISTS (SELECT 1 FROM route_stops s WHERE s.route_id = r.id AND s.status = 'pending')""", stop["id"], at)
-    return new_status
+    detail = (f"{stop['tracking_token']} (stop {stop['sequence']}) out_for_delivery -> {new_status}"
+              + (f" · reason: {reason}" if reason else "")
+              + f" · delivery_attempts row added · event {str(event_id)[:8]}")
+    return new_status, detail
 
 
 async def run(once):
@@ -125,13 +137,13 @@ async def run(once):
             if not entries and once:
                 break
             for entry_id, ev in entries:
-                outcome = "location ping, not for this worker"
+                outcome, detail = "location ping, not for this worker", ""
                 if ev.get("event_type") in HANDLED:
                     async with conn.transaction():
-                        outcome = await apply(conn, ev)
+                        outcome, detail = await apply(conn, ev)
                 await redis.xack(STREAM, GROUP, entry_id)
                 counts[outcome] = counts.get(outcome, 0) + 1
-                print(f"  {ev.get('event_type'):20} -> {outcome}", flush=True)
+                print(f"  {entry_id}  {ev.get('event_type'):18} -> {outcome:16} {detail}", flush=True)
     finally:
         await conn.close()
         await redis.aclose()
