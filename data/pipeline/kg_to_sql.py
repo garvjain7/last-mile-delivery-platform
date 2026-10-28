@@ -10,6 +10,7 @@ already has orders, so it can never overwrite real data.
 """
 
 import argparse
+import gzip
 import asyncio
 import time
 
@@ -142,7 +143,11 @@ def main():
     ap.add_argument("--url", required=True)
     args = ap.parse_args()
     t0 = time.time()
-    g = Graph().parse(args.ttl)
+    if args.ttl.endswith(".gz"):  # the committed snapshot, data/snapshot/raipur_world.ttl.gz
+        with gzip.open(args.ttl, "rb") as fh:
+            g = Graph().parse(fh, format="turtle")
+    else:
+        g = Graph().parse(args.ttl)
     print(f"parsed {len(g):,} triples in {time.time() - t0:.0f}s")
     data = rows(g)
     asyncio.run(load(args.url, data))

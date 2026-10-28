@@ -27,8 +27,9 @@ import asyncpg
 import httpx
 from dotenv import load_dotenv
 
-CORE_API = "http://localhost:8000"
-GATEWAY = "http://localhost:8002"
+load_dotenv()
+CORE_API = os.getenv("CORE_API_URL", "http://localhost:8000")
+GATEWAY = os.getenv("DRIVER_GATEWAY_URL", "http://localhost:8002")
 DEV_PASSWORD = "LastMile#2026"   # data/README.md (dev-only test accounts)
 
 

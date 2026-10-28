@@ -60,6 +60,8 @@ The codebase is built as a **modular monolith** — a single unified repository 
 
 Follow these steps when cloning the repository for the first time.
 
+> **To run and test the whole order flow locally (macOS, Linux, Windows), follow [`docs/LOCAL_SETUP.md`](docs/LOCAL_SETUP.md).**
+
 ### Step 1: Clone Repository & Create `.env`
 
 ```bash
@@ -86,6 +88,8 @@ Use the URL as provided by Neon with the `postgresql+asyncpg` scheme and
 `python scripts/verify_database_connection.py` after setting `DATABASE_URL`.
 
 ### Step 2: One-Click Environment Setup (Run Once)
+
+Needs Python 3.11 (macOS's built-in `python3` is 3.9 and cannot install the requirements): `brew install python@3.11`.
 
 Execute the setup script to create your local virtual environment (`venv`) and install all dependencies:
 
@@ -116,10 +120,10 @@ Instead of opening 5 separate terminal windows, you can boot the entire platform
 
 From the root of the repository, simply run:
 ```bash
-honcho start -f Procfile.dev
+honcho start -f Procfile.dev core_api control_tower gateway
 ```
 
-This will spin up all 5 isolated microservices (`core_api`, `control_tower`, `driver_gateway`, `routing_worker`, and `simulator`) concurrently in the background and multiplex their logs into your current terminal. Press `Ctrl+C` to cleanly shut them all down.
+This starts the three web services (`core_api` :8000, `control_tower` :8001, `driver_gateway` :8002) and multiplexes their logs into your current terminal. Press `Ctrl+C` to shut them all down. The `router` and `simulator` entries are not web apps yet: run the Routing Worker and the Simulator as commands instead (see `data/README.md`, "Run the platform end to end").
 
 ---
 

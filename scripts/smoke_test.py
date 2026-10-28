@@ -9,13 +9,18 @@ loaded (scripts/reset_demo_db.sh). Prints PASS/FAIL per step.
 """
 
 import argparse
+import os
 import subprocess
 import sys
 import uuid
 
 import httpx
+from dotenv import load_dotenv
 
-CORE, GATEWAY = "http://localhost:8000", "http://localhost:8002"  # must match PUBLIC_BASE_URL (CSRF)
+load_dotenv()
+# CORE must match Core API's PUBLIC_BASE_URL (CSRF); same variables as the simulator.
+CORE = os.getenv("CORE_API_URL", "http://localhost:8000")
+GATEWAY = os.getenv("DRIVER_GATEWAY_URL", "http://localhost:8002")
 DEV_PASSWORD = "LastMile#2026"
 ACCOUNTS = [  # role, email, password, page it should land on
     ("admin", "seed_admin@test.internal", "AdminPass123!", "/admin"),

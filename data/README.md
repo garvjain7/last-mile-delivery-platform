@@ -53,6 +53,7 @@ DIGIPIN  ──────┘
 ```bash
 # one-time downloads (git-ignored, data/raw/)
 curl -L -o data/raw/osm/central-zone-261027.osm.pbf https://download.geofabrik.de/asia/india/central-zone-261027.osm.pbf
+# (Geofabrik removes dated files after a while; central-zone-latest.osm.pbf works too, with slightly different data)
 curl -L -o data/raw/pincode/pincode_india_post_2021.csv https://raw.githubusercontent.com/harshvardhaniimi/IndiaPIN/HEAD/data-raw/pincode.csv
 # Amazon files: https://registry.opendata.aws/amazon-last-mile-challenges/ (only needed to re-calibrate)
 
@@ -88,3 +89,10 @@ Edge-case accounts: `locked.customer@lastmile.example.com` (locked out),
   bulky parcel that cannot go on a two-wheeler, parcel larger than any
   vehicle, 30-minute slot, already-expired slot, ₹48,500 COD, low-confidence
   PIN, address outside the service area, closed hub next to an active one.
+
+
+## Run the platform end to end
+
+See [`docs/LOCAL_SETUP.md`](../docs/LOCAL_SETUP.md) (macOS, Linux, Windows). Testing
+only needs the committed snapshot `data/snapshot/raipur_world.ttl.gz`, loaded by
+`python scripts/reset_demo_db.py`; the build above is for regenerating it.
