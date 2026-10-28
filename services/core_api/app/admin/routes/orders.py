@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, Path, Query, Request
 from pydantic import BaseModel
-from sqlalchemy import and_, func, or_, select, text
+from sqlalchemy import and_, func, literal_column, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -405,10 +405,10 @@ async def get_order(
             Order,
             Merchant,
             Warehouse,
-            text("ST_Y(orders.delivery_location::geometry)").label("dlat"),
-            text("ST_X(orders.delivery_location::geometry)").label("dlon"),
-            text("ST_Y(warehouses.location::geometry)").label("wlat"),
-            text("ST_X(warehouses.location::geometry)").label("wlon"),
+            literal_column("ST_Y(orders.delivery_location::geometry)").label("dlat"),
+            literal_column("ST_X(orders.delivery_location::geometry)").label("dlon"),
+            literal_column("ST_Y(warehouses.location::geometry)").label("wlat"),
+            literal_column("ST_X(warehouses.location::geometry)").label("wlon"),
         )
         .join(Merchant, Merchant.id == Order.merchant_id)
         .outerjoin(Warehouse, Warehouse.id == Order.warehouse_id)

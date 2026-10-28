@@ -435,7 +435,7 @@ export function createOrdersPage({ api, onToast, route }) {
         const recipientCell = document.createElement('td');
         recipientCell.append(el('span', 'orders-recipient', order.recipient_name));
         if (order.is_guest) recipientCell.append(el('span', 'orders-guest-tag', 'Guest order'));
-        const warehouseCell = el('td', 'orders-warehouse-code', order.warehouse.code);
+        const warehouseCell = el('td', 'orders-warehouse-code', order.warehouse ? order.warehouse.code : 'Not assigned');
         const statusCell = document.createElement('td'); statusCell.append(statusBadge(order.status));
         const windowCell = document.createElement('td'); deliveryWindow(order, windowCell); windowCell.dataset.orderWindow = JSON.stringify(order);
         const driverCell = document.createElement('td');
@@ -511,7 +511,7 @@ export function createOrdersPage({ api, onToast, route }) {
 
     const caseSummary = el('div', 'orders-case-summary');
     caseSummary.append(statusBadge(data.status));
-    caseSummary.append(field('Warehouse', `${data.warehouse.code} · ${data.warehouse.name}`));
+    caseSummary.append(field('Warehouse', data.warehouse ? `${data.warehouse.code} · ${data.warehouse.name}` : 'Not assigned yet'));
     caseSummary.append(field('Latest driver', data.stops[0]?.driver?.full_name || '—'));
     caseSummary.append(field('Latest event', data.events[0] ? date(data.events[0].occurred_at, true) : date(data.created_at, true)));
     const copies = el('div', 'orders-case-copies');
@@ -575,9 +575,12 @@ export function createOrdersPage({ api, onToast, route }) {
     const location = el('div', 'orders-detail-grid');
     location.append(field('Delivery address', data.delivery_address), field('Coordinates', `${Number(data.latitude).toFixed(6)}, ${Number(data.longitude).toFixed(6)}`));
     location.append(externalLink('Open drop-off in OpenStreetMap', `https://www.openstreetmap.org/?mlat=${encodeURIComponent(data.latitude)}&mlon=${encodeURIComponent(data.longitude)}#map=15/${encodeURIComponent(data.latitude)}/${encodeURIComponent(data.longitude)}`));
-    const warehouseLink = entityLink(`${data.warehouse.code} · ${data.warehouse.name}`, `/admin/warehouses?id=${encodeURIComponent(data.warehouse.id)}`);
+    const warehouseLink = data.warehouse
+      ? entityLink(`${data.warehouse.code} · ${data.warehouse.name}`, `/admin/warehouses?id=${encodeURIComponent(data.warehouse.id)}`)
+      : el('strong', '', 'Not assigned yet');
     location.append(field('Origin warehouse', ''), field('Straight-line distance', data.distance_km_straight == null ? '—' : `${Number(data.distance_km_straight).toFixed(1)} km`));
-    location.querySelector('.orders-detail-field strong').replaceWith(warehouseLink);
+    // The third field is "Origin warehouse"; the first is the delivery address.
+    location.querySelectorAll('.orders-detail-field strong')[2].replaceWith(warehouseLink);
     drawer.append(section('Location', location));
 
     const parties = el('div', 'orders-detail-grid');

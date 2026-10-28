@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Literal, Optional
 
 from fastapi import APIRouter, Depends, Path, Query, Request
 from pydantic import BaseModel, Field, model_validator
-from sqlalchemy import delete, func, or_, select, text, update
+from sqlalchemy import delete, func, literal_column, or_, select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -151,8 +151,8 @@ async def list_warehouses(
 
     base = select(
         Warehouse,
-        text("ST_Y(location::geometry)").label("lat"),
-        text("ST_X(location::geometry)").label("lon"),
+        literal_column("ST_Y(location::geometry)").label("lat"),
+        literal_column("ST_X(location::geometry)").label("lon"),
         staff_count_subq.label("staff_count"),
         open_orders_subq.label("open_orders"),
         active_routes_subq.label("active_routes"),
@@ -256,8 +256,8 @@ async def get_warehouse(
     row = (await db.execute(
         select(
             Warehouse,
-            text("ST_Y(location::geometry)").label("lat"),
-            text("ST_X(location::geometry)").label("lon"),
+            literal_column("ST_Y(location::geometry)").label("lat"),
+            literal_column("ST_X(location::geometry)").label("lon"),
         ).where(Warehouse.id == wid)
     )).first()
 
@@ -429,8 +429,8 @@ async def update_warehouse(
     row = (await db.execute(
         select(
             Warehouse,
-            text("ST_Y(location::geometry)").label("lat"),
-            text("ST_X(location::geometry)").label("lon"),
+            literal_column("ST_Y(location::geometry)").label("lat"),
+            literal_column("ST_X(location::geometry)").label("lon"),
         ).where(Warehouse.id == wid)
     )).first()
     if row is None:
@@ -527,8 +527,8 @@ async def _wh_fetch_row(wid: _uuid.UUID, db):
     row = (await db.execute(
         select(
             Warehouse,
-            text("ST_Y(location::geometry)").label("lat"),
-            text("ST_X(location::geometry)").label("lon"),
+            literal_column("ST_Y(location::geometry)").label("lat"),
+            literal_column("ST_X(location::geometry)").label("lon"),
         ).where(Warehouse.id == wid)
     )).first()
     return row
