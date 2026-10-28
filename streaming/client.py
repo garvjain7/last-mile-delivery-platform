@@ -37,4 +37,6 @@ async def add_to_stream(stream_name: str, fields: dict) -> str:
     Publish an event to a Redis Stream, retaining approximately 10,000 entries.
     """
     client = await get_redis_client()
+    # Redis stream fields cannot be null; unset optional fields are omitted.
+    fields = {key: value for key, value in fields.items() if value is not None}
     return await client.xadd(stream_name, fields, maxlen=10_000, approximate=True)
