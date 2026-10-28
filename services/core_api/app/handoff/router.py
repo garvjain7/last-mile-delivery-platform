@@ -15,7 +15,8 @@ Each status change and its order_events row commit in one transaction.
 import uuid
 from typing import Optional
 
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Body, Cookie, Depends, HTTPException, Request, status
+from pydantic import BaseModel
 from jose import JWTError
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -27,6 +28,12 @@ from services.core_api.app.auth.security import decode_access_token
 from services.core_api.app.database.connection import get_db_session
 
 router = APIRouter(tags=["Hand-off"])
+
+
+class HandoffNote(BaseModel):
+    """Optional JSON body. Declaring it makes API clients (and the /docs page)
+    send Content-Type: application/json, which the CSRF check requires."""
+    note: Optional[str] = None
 
 
 def require_role(role: UserRole):
@@ -90,6 +97,7 @@ async def list_merchant_orders(
 @router.post("/api/merchant/orders/{order_id}/send", dependencies=[Depends(csrf_check)])
 async def send_order(
     order_id: uuid.UUID,
+    body: Optional[HandoffNote] = Body(None),
     merchant: User = Depends(require_role(UserRole.merchant)),
     db: AsyncSession = Depends(get_db_session),
 ):
@@ -122,6 +130,7 @@ async def send_order(
 @router.post("/api/hub/orders/{order_id}/receive", dependencies=[Depends(csrf_check)])
 async def receive_order(
     order_id: uuid.UUID,
+    body: Optional[HandoffNote] = Body(None),
     staff: User = Depends(require_role(UserRole.dispatcher)),
     db: AsyncSession = Depends(get_db_session),
 ):
