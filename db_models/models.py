@@ -5,7 +5,7 @@
 
 import enum as python_enum
 import uuid
-from datetime import datetime
+from datetime import datetime, time
 from typing import List, Optional
 
 from geoalchemy2 import Geography
@@ -22,6 +22,7 @@ from sqlalchemy import (
     Numeric,
     String,
     Text,
+    Time,
     UniqueConstraint,
     text,
 )
@@ -91,6 +92,16 @@ class FailureReason(python_enum.Enum):
     wrong_address         = "wrong_address"
     refused               = "refused"
     other                 = "other"
+
+
+class PaymentMode(python_enum.Enum):
+    prepaid = "prepaid"
+    cod     = "cod"
+
+
+class AttemptOutcome(python_enum.Enum):
+    delivered = "delivered"
+    failed    = "failed"
 
 
 # ---------------------------------------------------------------------------
@@ -224,6 +235,8 @@ class Warehouse(Base):
     address:    Mapped[str]       = mapped_column(Text, nullable=False)
     location:   Mapped[object]    = mapped_column(Geography(geometry_type="POINT", srid=4326), nullable=False)
     is_active:  Mapped[bool]      = mapped_column(Boolean, nullable=False, server_default="true")
+    pincode:          Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    service_radius_m: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime]  = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at: Mapped[datetime]  = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
@@ -287,10 +300,17 @@ class Driver(Base):
     status defaults to 'pending' (approval required before going active)."""
 
     __tablename__ = "drivers"
+    __table_args__ = (
+        CheckConstraint("(shift_start IS NULL) = (shift_end IS NULL)", name="drivers_shift_pair"),
+        CheckConstraint("shift_end > shift_start", name="drivers_shift_order"),
+    )
 
     user_id:    Mapped[uuid.UUID]           = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"), primary_key=True)
     vehicle_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("vehicles.id"), unique=True, nullable=True)
     status:     Mapped[DriverStatus]        = mapped_column(Enum(DriverStatus, name="driver_status"), nullable=False, server_default="pending")
+    home_warehouse_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("warehouses.id"), nullable=True)
+    shift_start:       Mapped[Optional[time]]      = mapped_column(Time, nullable=True)
+    shift_end:         Mapped[Optional[time]]      = mapped_column(Time, nullable=True)
     created_at: Mapped[datetime]            = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at: Mapped[datetime]            = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
@@ -328,6 +348,14 @@ class Order(Base):
         ),
         CheckConstraint("weight_kg > 0", name="orders_weight_positive"),
         CheckConstraint("volume_m3 > 0", name="orders_volume_positive"),
+        CheckConstraint("pincode ~ '^[1-9][0-9]{5}$'", name="orders_pincode_format"),
+        CheckConstraint("digipin ~ '^[2-9CJKLMPFT]{10}$'", name="orders_digipin_format"),
+        CheckConstraint("cod_amount_inr > 0", name="orders_cod_amount_positive"),
+        CheckConstraint("service_time_s >= 0", name="orders_service_time_non_negative"),
+        CheckConstraint(
+            "(payment_mode = 'cod') = (cod_amount_inr IS NOT NULL)",
+            name="orders_cod_amount_matches_mode",
+        ),
     )
 
     id:                 Mapped[uuid.UUID]          = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=func.uuid_generate_v4())
@@ -346,6 +374,13 @@ class Order(Base):
     weight_kg:          Mapped[float]              = mapped_column(Numeric(10, 3), nullable=False)
     volume_m3:          Mapped[float]              = mapped_column(Numeric(10, 4), nullable=False)
     tracking_token:     Mapped[str]                = mapped_column(Text, unique=True, nullable=False)
+    pincode:            Mapped[Optional[str]]      = mapped_column(Text, nullable=True)
+    locality:           Mapped[Optional[str]]      = mapped_column(Text, nullable=True)
+    landmark:           Mapped[Optional[str]]      = mapped_column(Text, nullable=True)
+    digipin:            Mapped[Optional[str]]      = mapped_column(Text, nullable=True)
+    payment_mode:       Mapped[PaymentMode]        = mapped_column(Enum(PaymentMode, name="payment_mode"), nullable=False, server_default="prepaid")
+    cod_amount_inr:     Mapped[Optional[float]]    = mapped_column(Numeric(10, 2), nullable=True)
+    service_time_s:     Mapped[Optional[int]]      = mapped_column(Integer, nullable=True)
     created_at:         Mapped[datetime]           = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at:         Mapped[datetime]           = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
@@ -447,6 +482,41 @@ class OrderEvent(Base):
     occurred_at:   Mapped[datetime]               = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
     order: Mapped["Order"] = relationship(back_populates="events")
+
+
+class DeliveryAttempt(Base):
+    """Outcome of one arrival at a stop, written by the Routing Worker's
+    terminal-event consumer. client_event_id is the driver app's event UUID."""
+
+    __tablename__ = "delivery_attempts"
+    __table_args__ = (
+        CheckConstraint(
+            "(outcome = 'failed') = (failure_reason IS NOT NULL)",
+            name="delivery_attempts_failure_reason_consistent",
+        ),
+        Index("idx_delivery_attempts_order", "order_id", "occurred_at"),
+    )
+
+    id:              Mapped[uuid.UUID]               = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=func.uuid_generate_v4())
+    order_id:        Mapped[uuid.UUID]               = mapped_column(UUID(as_uuid=True), ForeignKey("orders.id"), nullable=False)
+    route_stop_id:   Mapped[uuid.UUID]               = mapped_column(UUID(as_uuid=True), ForeignKey("route_stops.id"), nullable=False)
+    driver_id:       Mapped[uuid.UUID]               = mapped_column(UUID(as_uuid=True), ForeignKey("drivers.user_id"), nullable=False)
+    outcome:         Mapped[AttemptOutcome]          = mapped_column(Enum(AttemptOutcome, name="attempt_outcome"), nullable=False)
+    failure_reason:  Mapped[Optional[FailureReason]] = mapped_column(Enum(FailureReason, name="failure_reason"), nullable=True)
+    pod_photo_url:   Mapped[Optional[str]]           = mapped_column(Text, nullable=True)
+    client_event_id: Mapped[uuid.UUID]               = mapped_column(UUID(as_uuid=True), unique=True, nullable=False)
+    occurred_at:     Mapped[datetime]                = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at:      Mapped[datetime]                = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
+class ProcessedEvent(Base):
+    """Idempotency ledger: a driver event with side effects is applied at most once."""
+
+    __tablename__ = "processed_events"
+
+    event_id:     Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    event_type:   Mapped[str]       = mapped_column(Text, nullable=False)
+    processed_at: Mapped[datetime]  = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
 
 # ---------------------------------------------------------------------------

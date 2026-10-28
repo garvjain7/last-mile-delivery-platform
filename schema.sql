@@ -36,6 +36,10 @@ CREATE TYPE failure_reason AS ENUM (
     'recipient_unavailable', 'wrong_address', 'refused', 'other'
 );
 
+CREATE TYPE payment_mode AS ENUM ('prepaid', 'cod');
+
+CREATE TYPE attempt_outcome AS ENUM ('delivered', 'failed');
+
 -- =====================================================================
 -- 3. TABLES
 -- =====================================================================
@@ -101,6 +105,8 @@ CREATE TABLE warehouses (
     address     text        NOT NULL,
     location    geography(Point, 4326) NOT NULL,   -- (lon, lat)
     is_active   boolean     NOT NULL DEFAULT true,
+    pincode           text    CHECK (pincode ~ '^[1-9][0-9]{5}$'),
+    service_radius_m  integer CHECK (service_radius_m > 0),
     created_at  timestamptz NOT NULL DEFAULT now(),
     updated_at  timestamptz NOT NULL DEFAULT now()
 );
@@ -135,8 +141,14 @@ CREATE TABLE drivers (
     user_id     uuid PRIMARY KEY REFERENCES users(id) ON DELETE RESTRICT,
     vehicle_id  uuid          UNIQUE REFERENCES vehicles(id),
     status      driver_status NOT NULL DEFAULT 'pending',
+    home_warehouse_id  uuid   REFERENCES warehouses(id),
+    -- Daily working hours, used as VROOM vehicle time windows.
+    shift_start        time,
+    shift_end          time,
     created_at  timestamptz   NOT NULL DEFAULT now(),
-    updated_at  timestamptz   NOT NULL DEFAULT now()
+    updated_at  timestamptz   NOT NULL DEFAULT now(),
+    CONSTRAINT drivers_shift_pair CHECK ((shift_start IS NULL) = (shift_end IS NULL)),
+    CONSTRAINT drivers_shift_order CHECK (shift_end > shift_start)
 );
 
 CREATE TABLE orders (
@@ -156,11 +168,23 @@ CREATE TABLE orders (
     weight_kg           numeric(10,3) NOT NULL CHECK (weight_kg > 0),
     volume_m3           numeric(10,4) NOT NULL CHECK (volume_m3 > 0),
     tracking_token      text          NOT NULL UNIQUE,
+    -- Indian addressing: PIN code, locality and nearest landmark, plus the
+    -- India Post DIGIPIN (~4 m grid code) of delivery_location.
+    pincode             text          CHECK (pincode ~ '^[1-9][0-9]{5}$'),
+    locality            text,
+    landmark            text,
+    digipin             text          CHECK (digipin ~ '^[2-9CJKLMPFT]{10}$'),
+    payment_mode        payment_mode  NOT NULL DEFAULT 'prepaid',
+    cod_amount_inr      numeric(10,2) CHECK (cod_amount_inr > 0),
+    -- Expected time at the door (parking, stairs, hand-over, cash).
+    service_time_s      integer       CHECK (service_time_s >= 0),
     created_at          timestamptz   NOT NULL DEFAULT now(),
     updated_at          timestamptz   NOT NULL DEFAULT now(),
     UNIQUE (merchant_id, merchant_order_ref),
     CHECK ((window_earliest IS NULL) = (window_latest IS NULL)),
-    CHECK (window_latest > window_earliest)
+    CHECK (window_latest > window_earliest),
+    CONSTRAINT orders_cod_amount_matches_mode
+        CHECK ((payment_mode = 'cod') = (cod_amount_inr IS NOT NULL))
 );
 
 CREATE TABLE routes (
@@ -232,6 +256,29 @@ CREATE TABLE order_events (
     CHECK (from_status IS DISTINCT FROM to_status)
 );
 
+-- One row per arrival outcome at a stop, written by Routing Worker's
+-- terminal-event consumer. client_event_id is the driver app's event UUID.
+CREATE TABLE delivery_attempts (
+    id               uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+    order_id         uuid            NOT NULL REFERENCES orders(id),
+    route_stop_id    uuid            NOT NULL REFERENCES route_stops(id),
+    driver_id        uuid            NOT NULL REFERENCES drivers(user_id),
+    outcome          attempt_outcome NOT NULL,
+    failure_reason   failure_reason,
+    pod_photo_url    text,
+    client_event_id  uuid            NOT NULL UNIQUE,
+    occurred_at      timestamptz     NOT NULL,
+    created_at       timestamptz     NOT NULL DEFAULT now(),
+    CHECK ((outcome = 'failed') = (failure_reason IS NOT NULL))
+);
+
+-- Idempotency ledger for driver events with side effects.
+CREATE TABLE processed_events (
+    event_id      uuid PRIMARY KEY,
+    event_type    text        NOT NULL,
+    processed_at  timestamptz NOT NULL DEFAULT now()
+);
+
 -- =====================================================================
 -- 4. INDEXES
 -- (UNIQUE constraints above create their own indexes and stay inline)
@@ -288,3 +335,15 @@ CREATE INDEX idx_merchant_members_merchant
 
 CREATE INDEX idx_warehouse_staff_warehouse
     ON warehouse_staff (warehouse_id);
+
+CREATE INDEX idx_delivery_attempts_order
+    ON delivery_attempts (order_id, occurred_at);
+
+CREATE INDEX idx_delivery_attempts_driver
+    ON delivery_attempts (driver_id, occurred_at DESC);
+
+CREATE INDEX idx_orders_pincode
+    ON orders (pincode);
+
+CREATE INDEX idx_drivers_home_warehouse
+    ON drivers (home_warehouse_id);
