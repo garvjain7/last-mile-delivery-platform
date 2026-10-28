@@ -13,6 +13,8 @@ Idempotent: the event_id is inserted into processed_events in the same
 transaction; a replayed event finds it and changes nothing. The stream
 entry is XACKed only after that transaction commits (AGENTS.md §4).
 Location pings are ignored here (Control Tower owns them).
+Crash recovery: entries a stopped worker read but never acknowledged are
+reclaimed with XAUTOCLAIM before new entries are read (architecture §3.7).
 
     python -m services.routing_worker.app.terminal_events --once   # drain and exit
     python -m services.routing_worker.app.terminal_events          # keep consuming
@@ -108,10 +110,18 @@ async def run(once):
             raise
     consumer = f"worker-{os.getpid()}"
     counts = {}
+    # --once is run by hand after a stop, so reclaim at once; a long-running
+    # worker leaves other workers 60 s before taking over their entries.
+    min_idle_ms = 0 if once else 60_000
     try:
         while True:
-            batch = await redis.xreadgroup(GROUP, consumer, {STREAM: ">"}, count=100, block=None if once else 5000)
-            entries = batch[0][1] if batch else []
+            _, entries, _ = await redis.xautoclaim(STREAM, GROUP, consumer, min_idle_time=min_idle_ms,
+                                                   start_id="0-0", count=100)
+            if entries:
+                print(f"reclaimed {len(entries)} unfinished event(s) from a stopped worker")
+            else:
+                batch = await redis.xreadgroup(GROUP, consumer, {STREAM: ">"}, count=100, block=None if once else 5000)
+                entries = batch[0][1] if batch else []
             if not entries and once:
                 break
             for entry_id, ev in entries:
@@ -121,9 +131,11 @@ async def run(once):
                         outcome = await apply(conn, ev)
                 await redis.xack(STREAM, GROUP, entry_id)
                 counts[outcome] = counts.get(outcome, 0) + 1
-                log.info("%s %s -> %s", ev.get("event_type"), ev.get("order_id") or ev.get("route_id"), outcome)
+                print(f"  {ev.get('event_type'):20} -> {outcome}", flush=True)
     finally:
         await conn.close()
+        await redis.aclose()
+    print("summary:")
     for outcome, n in sorted(counts.items()):
         print(f"{n:4}  {outcome}")
 
