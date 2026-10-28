@@ -33,6 +33,7 @@ async def ingest_driver_event(event: dict, authorization: str | None = Header(de
 
     await add_to_stream(
         "driver_events_stream",
-        validated.model_dump(mode="json"),
+        # Redis stream fields cannot be null; optional fields that are unset are left out.
+        validated.model_dump(mode="json", exclude_none=True),
     )
     return {"status": "accepted", "event_id": validated.event_id}
