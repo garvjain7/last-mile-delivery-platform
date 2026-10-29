@@ -1,0 +1,30 @@
+:root {
+  color-scheme: light;
+  --green: #0e5a45;
+  --green-dark: #0a3d30;
+  --green-soft: #e8f1ec;
+  --yellow: #f2c230;
+  --blue: #1b4db1;
+  --ink: #18241f;
+  --ink-soft: #35443d;
+  --muted: #6b7871;
+  --line: #e2e7e0;
+  --line-strong: #d2dad2;
+  --canvas: #f5f6f1;
+  --white: #fff;
+  --danger: #a6402b;
+  --danger-soft: #fbefec;
+  --warning: #8a6411;
+  --warning-soft: #fbf4df;
+  --info: #315b99;
+  --info-soft: #edf2fa;
+  --success: #23694a;
+  --success-soft: #e8f3ec;
+  --display: 'Bricolage Grotesque', 'Segoe UI', sans-serif;
+  --body: 'Hanken Grotesk', 'Segoe UI', sans-serif;
+  --sidebar-width: 258px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --shadow-card: 0 1px 2px rgb(23 38 30 / 4%), 0 8px 24px rgb(23 38 30 / 3%);
+}

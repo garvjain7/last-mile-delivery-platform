@@ -76,10 +76,14 @@ cp .env.example .env
 
 Open `.env` and fill in your team secrets:
 ```env
-DATABASE_URL=postgresql+asyncpg://<user>:<password>@ep-xyz.neon.tech/lastMileDB?sslmode=require
+DATABASE_URL=postgresql+asyncpg://<user>:<password>@ep-xyz.us-east-2.aws.neon.tech/neondb?ssl=require
 REDIS_URL=rediss://default:<password>@red-xyz.oregon-redis.render.com:6379
 JWT_SECRET_KEY=your_shared_team_jwt_secret_key_123
 ```
+
+Use the URL as provided by Neon with the `postgresql+asyncpg` scheme and
+`ssl=require`. To report safe connection and query timings without printing credentials, run
+`python scripts/verify_database_connection.py` after setting `DATABASE_URL`.
 
 ### Step 2: One-Click Environment Setup (Run Once)
 
@@ -103,8 +107,19 @@ Whenever you open a new terminal window to code:
 
 Verify installation:
 ```bash
-python -c "import fastapi, uvicorn, sqlalchemy, asyncpg, redis, httpx, minio, pydantic; print('ALL DEPENDENCIES LOADED!')"
+python -c "import fastapi, uvicorn, sqlalchemy, asyncpg, redis, httpx, minio, pydantic, honcho; print('ALL DEPENDENCIES LOADED!')"
 ```
+
+### Step 4: Run All Services Locally
+
+Instead of opening 5 separate terminal windows, you can boot the entire platform with one command using the included `honcho` process manager. 
+
+From the root of the repository, simply run:
+```bash
+honcho start -f Procfile.dev
+```
+
+This will spin up all 5 isolated microservices (`core_api`, `control_tower`, `driver_gateway`, `routing_worker`, and `simulator`) concurrently in the background and multiplex their logs into your current terminal. Press `Ctrl+C` to cleanly shut them all down.
 
 ---
 

@@ -1,82 +1,165 @@
-<!-- API Contracts specification documenting REST and WebSocket endpoint paths. -->
-<!-- Defines service endpoints, request/response models, and protocol bindings across platform services. -->
-# Platform API Contracts
+# API Contracts
 
-This document formalizes the public and internal REST and WebSocket endpoint contracts for all platform microservices.
+This document separates **implemented endpoints** from **planned processing behavior**. Paths below are the paths declared by the service applications; a stub response is not evidence that the underlying workflow is implemented. Request and response fields are defined by the route's Pydantic models where present.
 
----
+## 1. Core API
 
-## 1. Core API (`services/core_api`)
+### Public pages
 
-### `POST /orders/`
-- **Purpose**: Ingest a new order, geocode the dropoff address, assign the nearest pickup facility using PostGIS KNN (`<->`), and publish `order.created` to `orders_stream`.
-- **Request Body**:
-  - `retailer_id` (string): Merchant ID.
-  - `dropoff_raw_address` (string): Raw address for Nominatim geocoding.
-  - `time_window` (string): Delivery time window constraint.
-  - `weight_kg` (float): Package weight.
-  - `volume_l` (float): Package volume.
-- **Response**: `201 Created`
-  - `order_id` (string)
-  - `pickup_facility_id` (string)
-  - `status` (string)
+| Method | Path | Access | Result |
+| --- | --- | --- | --- |
+| GET | `/` | Public | Home HTML |
+| GET | `/login` | Public | Login HTML |
+| GET | `/register` | Public | Registration HTML |
+| GET | `/reset-password` | Public | Password-reset HTML |
+| GET | `/track` | Public | Tracking HTML; no authentication |
 
-### `GET /staff/orders`
-- **Purpose**: Minimal Admin/Staff view listing all orders across facilities.
-- **Response**: `200 OK` (Array of Order objects)
+### Authentication
 
-### `POST /staff/orders/{order_id}/unstick`
-- **Purpose**: Minimal Admin action to unstick a stuck order/route.
-- **Response**: `200 OK` (`{"order_id": string, "status": "reset"}`)
+| Method | Path | Access | Contract |
+| --- | --- | --- | --- |
+| POST | `/auth/register/customer` | Public | `RegisterRequest`; creates customer and returns `201 {"redirect_to":"/login"}` without setting cookies. |
+| POST | `/auth/register/driver` | Public | `RegisterRequest`; creates driver and returns `201 {"redirect_to":"/login"}` without setting cookies. |
+| POST | `/auth/login` | Public | `LoginRequest`; on success sets httpOnly access and refresh cookies and returns `user_id`, `roles`, and `redirect_to`. Invalid credentials share one error response. |
+| POST | `/auth/logout` | Public | Clears auth cookies; returns a success detail. |
+| POST | `/auth/refresh` | Refresh cookie | Rotates the refresh token and sets cookies. A recently rotated token may be replayed within 30 seconds to recover from concurrent refreshes. Inactive/locked users and revoked tokens outside that grace window return `401`; a revoked token outside the grace window revokes that user's sessions. |
+| POST | `/auth/forgot-password` | Public | `ForgotPasswordRequest`; returns `200` with the same non-enumerating message for unknown accounts and email-cooldown requests. |
+| POST | `/auth/reset-password` | Public | `ResetPasswordRequest`; consumes the reset token, updates the password, and revokes sessions. |
+| GET | `/auth/me` | Access cookie or Bearer token | Returns user identity, roles, redirect path, and nullable driver status. |
 
-### System Health Probes
-- `GET /health/live`: Process liveness probe.
-- `GET /health/ready`: Readiness probe checking Postgres & Redis connection health.
+Registration/login field schemas are in `services/core_api/app/auth/schemas.py`. Tokens are transported in httpOnly cookies, not returned in JSON: `access_token` is scoped to `/` for 15 minutes and `refresh_token` to `/auth` for 30 days; both use SameSite=Lax and the configured Secure flag. Login redirect selection is role-prioritized: admin, dispatcher, fleet manager, merchant, driver, customer. Customers land at `/users/{user_id}`; `/track` remains public. Roles without a configured destination are rejected. Registration creates the account but does not sign the user in. Password hashing and verification use worker threads; three failed logins lock an account for five minutes.
 
----
+Forgot-password requests use a per-user 60-second Redis email cooldown. Admin send-reset and resend-invite use the same cooldown and return `429` with `Retry-After` when limited. Password reset revokes existing refresh sessions.
 
-## 2. Control Tower API (`services/control_tower`)
+### Public parcel tracking
 
-### `GET /ws/fleet` (WebSocket)
-- **Purpose**: Real-time push feed streaming targeted driver position and order state updates to dispatcher UI.
-- **Protocol**: WebSocket (JSON payloads).
+| Method | Path | Access | Contract |
+| --- | --- | --- | --- |
+| GET | `/api/track/{code}` | Public; 30 requests/minute/IP | Returns tracking status, tone, ETA text, milestone steps, and customer-safe order details. Invalid and unknown codes share a 404 response. |
 
-### `POST /rescue/{vehicle_id}`
-- **Purpose**: Dynamic rescue trigger endpoint requesting Routing Worker to re-solve remaining stops for an affected vehicle.
-- **Response**: `200 OK` (`{"vehicle_id": string, "status": "rescue_triggered"}`)
+### Orders and minimal staff endpoints
 
-### System Health Probes
-- `GET /health/live`: Process liveness probe.
-- `GET /health/ready`: Readiness probe checking Redis connection health.
+| Method | Path | Access | Current behavior |
+| --- | --- | --- | --- |
+| POST | `/orders/` | Unauthenticated integration/guest order | Accepts `seller_id`, recipient name/phone, delivery address, weight/volume, and an optional paired delivery window. Requires an active seller; geocodes through configured Nominatim; writes an unclaimed `placed` order with `warehouse_id = null` and its initial event in one transaction; then publishes `order.created`. It has no customer idempotency key or customer rate limit. |
+| GET | `/staff/orders` | Admin access token | Lists orders with optional `status` (repeatable), `merchant_id`, `warehouse_id`, `q`, `from`, `to`, `limit` (default 50, max 100), and `offset` filters. Results include order, merchant, warehouse, recipient, status, and timestamp fields. |
+| POST | `/staff/orders/{order_id}/unstick` | Admin access token and CSRF origin/content-type validation | Re-publishes an order as `order.created` only when its status is `placed` and both `created_at` and `updated_at` exceed the configured `STALE_PENDING_HOURS` age. It preserves status, updates `updated_at` to suppress immediate repeat requests, and returns `{order_id, status: "republished", order_status: "placed"}`. Unknown orders return 404; ineligible/recently re-published orders return 409; Redis publish failures return 503. |
 
----
+These staff endpoints are admin-only; state-changing requests require a valid Origin/Referer and JSON content type.
 
-## 3. Driver Gateway (`services/driver_gateway`)
+### Customer API and pages
 
-### `POST /driver/events`
-- **Purpose**: Ingest driver telemetry ticks (location updates, arrivals, POD completion, failures) and write immediately to `driver_events_stream`.
-- **Header**: `Authorization: Bearer <JWT>`
-- **Request Body**:
-  - `event_id` (string, UUID): Client-generated event UUID for server-side deduplication.
-  - `driver_id` (string): Driver identifier.
-  - `event_type` (string): `driver.location.updated` | `stop.arrived` | `delivery.completed` | `delivery.failed`
-  - `latitude` (float)
-  - `longitude` (float)
-  - `current_route_id` (optional string)
-  - `order_id` (optional string)
-  - `pod_photo_url` (optional string)
-  - `failure_reason` (optional string)
-  - `timestamp` (string)
-- **Response**: `202 Accepted` (`{"status": "accepted", "event_id": string}`)
+`/api/users/{user_id}/...` requires an active, unlocked customer whose ID matches the authenticated token and the URL. Mismatches, admins without the customer role, and unknown resources return `404`. Responses use `Cache-Control: no-store`. `GET /api/users/{user_id}` returns active/past/all counts and up to five recent active orders. `GET /api/users/{user_id}/orders` returns a filtered, cursor-paginated order list; filters are `tab` (`active`, `past`, `all`), `status`, `seller`, `q`, `from`, `to`, `cursor`, and `limit`. Its first page also includes counts and sellers. `GET /api/users/{user_id}/orders/{order_id}` returns the customer's order, seller, event history, and timeline. `GET /api/users/{user_id}/request/address?lat=&lng=` reverse-geocodes through configured Nominatim and returns `{address, lat, lng}`; `GET /api/users/{user_id}/request/sellers` lists active sellers.
 
-### System Health Probes
-- `GET /health/live`: Process liveness probe.
-- `GET /health/ready`: Readiness probe checking Redis & MinIO storage.
+`POST /api/users/{user_id}/request` accepts seller, recipient name/phone, delivery address, weight/volume, and an optional paired delivery window. It requires `Idempotency-Key`, is limited to 10 requests per hour per customer, and returns 201 for a new order or 200 for an idempotent replay. The customer identity comes from the authenticated user, never the request body. Creation geocodes before the transaction, then writes a `placed` order with `warehouse_id = null` and its initial event atomically; after commit it publishes `order.created`. Warehouse assignment belongs to the later merchant handoff, which is not implemented. `POST /api/users/{user_id}/orders/claim` claims an unclaimed order by tracking code and recipient phone, is limited to five attempts per 10 minutes, and uses the CSRF dependency.
 
----
+Customer HTML routes are `/users/{user_id}` (overview), `/users/{user_id}/orders` (list), `/users/{user_id}/orders/{order_id}` (detail), and `/users/{user_id}/request` (request form). Each file is separately served through the customer gate; assets under `/users/assets/*` are also gated. The request page renders seller selection, recipient and parcel fields, optional delivery windows, draft persistence, location-based address lookup, validation, and submission in its JavaScript module.
 
-## 4. Shared Contract Enums
+### Admin API
 
-- **OrderStatus**: `CREATED` | `ASSIGNED` | `IN_TRANSIT` | `DELIVERED` | `FAILED`
-- **DriverStatus**: `OFFLINE` | `AVAILABLE` | `ON_ROUTE`
-- **EventTypes**: `order.created` | `route.published` | `driver.location.updated` | `stop.arrived` | `delivery.completed` | `delivery.failed`
+All entries below use the `/api/admin` prefix. The parent router applies `require_admin` and `csrf_check`; CSRF validation is intended to enforce unsafe-method requests only. JSON shapes are the route response models. List endpoints use their declared filter, sort, pagination, or cursor query parameters.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| GET | `/api/admin/me` | Current admin identity and app timezone. |
+| GET | `/api/admin/overview` | Operational overview KPIs and summary lists. |
+| GET | `/api/admin/drivers` | Search, filter, sort, paginate, and count drivers. |
+| GET | `/api/admin/drivers/{user_id}` | Driver details. |
+| POST | `/api/admin/drivers/{user_id}/verify` | Verify a driver. |
+| POST | `/api/admin/drivers/{user_id}/reject` | Reject a driver. |
+| POST | `/api/admin/drivers/bulk` | Bulk driver action. |
+| GET | `/api/admin/users` | Search/filter/sort/paginate users. |
+| GET | `/api/admin/users/{user_id}` | User details. |
+| POST | `/api/admin/users` | Create/invite a user. |
+| POST | `/api/admin/users/{user_id}/deactivate` | Deactivate a user. |
+| POST | `/api/admin/users/{user_id}/reactivate` | Reactivate a user. |
+| POST | `/api/admin/users/{user_id}/unlock` | Unlock a user account. |
+| POST | `/api/admin/users/{user_id}/revoke-sessions` | Revoke user sessions. |
+| POST | `/api/admin/users/{user_id}/send-reset` | Send a password-reset flow. |
+| POST | `/api/admin/users/{user_id}/resend-invite` | Resend an invitation. |
+| POST | `/api/admin/users/{user_id}/roles` | Assign a role. |
+| POST | `/api/admin/users/{user_id}/roles/{role}/revoke` | Revoke a role. |
+| GET | `/api/admin/merchants` | Search/filter/sort/paginate merchants. |
+| GET | `/api/admin/merchants/{merchant_id}` | Merchant details. |
+| POST | `/api/admin/merchants` | Create a merchant. |
+| PATCH | `/api/admin/merchants/{merchant_id}` | Update merchant fields. |
+| POST | `/api/admin/merchants/{merchant_id}/deactivate` | Deactivate a merchant. |
+| POST | `/api/admin/merchants/{merchant_id}/reactivate` | Reactivate a merchant. |
+| GET | `/api/admin/warehouses` | Search/filter/sort/paginate warehouses. |
+| GET | `/api/admin/warehouses/{warehouse_id}` | Warehouse details. |
+| POST | `/api/admin/warehouses` | Create a warehouse. |
+| PATCH | `/api/admin/warehouses/{warehouse_id}` | Update warehouse fields. |
+| POST | `/api/admin/warehouses/{warehouse_id}/deactivate` | Deactivate a warehouse. |
+| POST | `/api/admin/warehouses/{warehouse_id}/reactivate` | Reactivate a warehouse. |
+| POST | `/api/admin/warehouses/{warehouse_id}/staff` | Assign warehouse staff. |
+| DELETE | `/api/admin/warehouses/{warehouse_id}/staff/{user_id}` | Remove warehouse staff assignment. |
+| GET | `/api/admin/orders` | Cursor-paginated order search with filters. |
+| GET | `/api/admin/orders/counts` | Order counts. |
+| GET | `/api/admin/orders/{tracking_token}` | Order detail by tracking token. |
+| GET | `/api/admin/activity/filters` | Available audit activity filter values. |
+| GET | `/api/admin/activity` | Cursor-paginated audit activity. |
+
+Admin page URLs are `GET /admin`, `/admin/drivers`, `/admin/users`, `/admin/merchants`, `/admin/warehouses`, `/admin/orders`, and `/admin/activity`. They are HTML panel routes, not API endpoints. Panel pages and `/admin/assets/*` are admin-gated; anonymous requests redirect to `/login?next=<requested-path>`, and authenticated users lacking the required role receive plain `403 Access denied`. Unknown admin page names return `404`. Admin user send-reset and resend-invite endpoints return `429` with `Retry-After` during their 60-second per-user email cooldown.
+
+### Health endpoints
+
+| Method | Path | Meaning |
+| --- | --- | --- |
+| GET | `/health` | Lightweight Core API liveness. |
+| GET | `/health/live` | Process liveness only. |
+| GET | `/health/ready` | Checks Core API Postgres and Redis dependencies; returns `503` when either check fails. |
+
+## 2. Control Tower API
+
+| Method | Path | Access | Current behavior |
+| --- | --- | --- | --- |
+| WebSocket | `/ws/fleet` | WebSocket client | Fleet update channel is declared; telemetry consumption/broadcast is incomplete. |
+| POST | `/rescue/{vehicle_id}` | HTTP client | **Stub:** returns `{"vehicle_id":"...","status":"rescue_triggered"}`. It does not publish a stream event or acquire a duplicate-request lock. |
+| GET | `/health/live` | Public | Process liveness. |
+| GET | `/health/ready` | Public | Currently returns a static ready response; Redis is not checked yet. |
+
+In the unified app, Control Tower is mounted at `/control-tower`, so these paths are prefixed with `/control-tower` there.
+
+## 3. Driver Gateway API
+
+The current mobile PWA also uses the authenticated Core API driver routes
+proxied by Gateway, plus `POST /driver/pod` for MinIO evidence uploads. The
+complete current route, scan, upload, and event contract is documented in
+[`driver-app.md`](./driver-app.md).
+
+The PWA may authenticate event ingestion with the signed-in `access_token`
+HttpOnly cookie; non-browser clients may use a Bearer JWT. Gateway acceptance
+means Redis append only. It does not persist delivery outcomes, PODs, scans, or
+returns in Postgres.
+
+| Method | Path | Access | Current behavior |
+| --- | --- | --- | --- |
+| POST | `/driver/events` | Driver client; Bearer HS256 JWT with `driver` role | Validates driver event payloads and appends them to `driver_events_stream`; driver identity comes from the token. Includes `route.started` when a driver starts an assigned route (`out_for_delivery`). |
+| GET | `/health/live` | Public | Process liveness. |
+| GET | `/health/ready` | Public | Currently returns a static ready response; Redis and MinIO are not checked yet. |
+
+In the unified app, Driver Gateway is mounted at `/driver`; its child API route is therefore `/driver/driver/events` there. When run as its own service, the route is `/driver/events`.
+
+## 4. Unified application status endpoints
+
+These routes belong to `services/app.py`, not to the service-local APIs.
+
+| Method | Path | Meaning |
+| --- | --- | --- |
+| GET | `/status` | Service status HTML page. |
+| GET | `/status/data` | One current snapshot of mounted services, background tasks, Postgres, and Redis. No automatic repeated polling is required. |
+| GET | `/health` | Lightweight process liveness. |
+| GET | `/health/live` | Process liveness. |
+| GET | `/health/ready` | Unified-app response; not the Core API's dependency-verified readiness check. |
+
+## 5. Processing contracts (mixed implemented and planned)
+
+The following distinguishes implemented processing from remaining platform work:
+
+1. **Implemented:** `POST /orders/` and `POST /api/users/{user_id}/request` validate order data, geocode the delivery address, persist a `placed` order with no warehouse and its initial `order_events` row, then publish `order.created` to `orders_stream`. The merchant handoff later selects a warehouse; its eligibility policy remains unresolved. The end-to-end lifecycle in `docs/end-to-end-system-flow.md` is authoritative for stage ordering.
+2. Routing Worker consumes orders through a Redis consumer group, obtains travel costs from OSRM, sends routing/capacity/time-window input to VROOM, persists routes and stops, publishes route updates, and acknowledges an order only after its database write commits.
+3. **Implemented for the Driver PWA:** Gateway authenticates drivers, validates location, arrival, package-scan, pickup, completion, and failure events, and publishes them to `driver_events_stream`. POD/exception evidence uploads are authorized by Core API and stored in MinIO before their object key is published. Scan/pickup records and evidence references are not persisted in Postgres under the current schema.
+4. Control Tower consumes live driver events into Redis Hash state and broadcasts changed state to `/ws/fleet` clients. Rescue requests should ask Routing Worker to re-solve only the affected vehicle's remaining stops.
+5. **Implemented:** Routing Worker validates stop ownership, updates `route_stops`, `orders`, `order_events`, and route/driver state for arrival and terminal outcomes, commits, then acknowledges. Terminal state transitions prevent duplicate status-history writes on replay. The authoritative schema has no `delivery_attempt` or `processed_event` table, so event UUIDs are not durably deduplicated and evidence object keys are not retained in Postgres.
+
+Shared status and event enum definitions are in `db_models/models.py` and `streaming/schemas/`; `schema.sql` is authoritative for database types and constraints.

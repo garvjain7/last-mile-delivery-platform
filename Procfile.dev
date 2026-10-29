@@ -1,0 +1,5 @@
+core_api:      uvicorn services.core_api.app.main:app --host 127.0.0.1 --port 8000
+control_tower: uvicorn services.control_tower.app.main:app --host 127.0.0.1 --port 8001
+gateway:       uvicorn services.driver_gateway.app.main:app --host 127.0.0.1 --port 8002
+router:        uvicorn services.routing_worker.app.main:app --host 127.0.0.1 --port 8003
+simulator:     uvicorn services.simulator.app.main:app --host 127.0.0.1 --port 8004

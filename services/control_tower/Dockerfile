@@ -13,4 +13,4 @@ COPY services/control_tower/app /app/services/control_tower/app
 
 ENV PYTHONPATH=/app
 
-CMD ["uvicorn", "services.control_tower.app.main:app", "--host", "0.0.0.0", "--port", "8001"]
+CMD ["uvicorn", "services.control_tower.app.main:app", "--host", "0.0.0.0", "--port", "8000"]

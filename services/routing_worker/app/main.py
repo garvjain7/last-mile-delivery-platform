@@ -12,13 +12,16 @@ async def main():
     Launch persistent consumer loops for orders_stream (OSRM/VROOM solve)
     and driver_events_stream terminal events.
     """
+    from services.routing_worker.app.consumers.orders_consumer import run_orders_consumer
+    from services.routing_worker.app.consumers.terminal_events_consumer import (
+        run_terminal_events_consumer,
+    )
+
     logger.info("Starting Routing Worker persistent consumer loops...")
-    # TODO: Initialize Redis consumer groups ('routing-workers')
-    # TODO: Spawn orders_consumer loop and terminal_events_consumer loop concurrently via asyncio.gather
-    try:
-        await asyncio.sleep(0.1)
-    except Exception as e:
-        logger.error(f"Routing Worker consumer error: {e}")
+    await asyncio.gather(
+        run_orders_consumer(),
+        run_terminal_events_consumer(),
+    )
 
 if __name__ == "__main__":
     asyncio.run(main())

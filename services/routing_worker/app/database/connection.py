@@ -2,17 +2,11 @@
 # Async SQLAlchemy database session manager for Routing Worker (Neon DB Free Tier Auto-Suspend Optimized)
 
 from typing import AsyncGenerator
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from app.config import config
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from services.routing_worker.app.config import config
+from db_models.engine import make_engine
 
-engine = create_async_engine(
-    config.database_url,
-    pool_size=config.postgres_pool_size,
-    max_overflow=config.postgres_max_overflow,
-    pool_recycle=300,
-    pool_pre_ping=True,
-    connect_args={"command_timeout": 5.0}
-)
+engine = make_engine(config.database_url)
 
 async_session_factory = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 

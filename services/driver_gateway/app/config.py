@@ -2,14 +2,19 @@
 # Loads environment variables once per-service into a structured config object.
 
 import os
+from dotenv import load_dotenv
 from pydantic import BaseModel
+
+load_dotenv()
 
 class DriverGatewayConfig(BaseModel):
     """Configuration properties for Driver Gateway service. Completely decoupled from Postgres."""
     redis_url: str = os.getenv("REDIS_URL", "redis://localhost:6379")
+    core_api_url: str = os.getenv("CORE_API_URL", "http://localhost:8000").rstrip("/")
     minio_endpoint: str = os.getenv("MINIO_ENDPOINT", "localhost:9000")
     minio_access_key: str = os.getenv("MINIO_ROOT_USER", "minioadmin")
     minio_secret_key: str = os.getenv("MINIO_ROOT_PASSWORD", "minioadmin")
+    minio_secure: bool = os.getenv("MINIO_SECURE", "false").lower() == "true"
     jwt_secret_key: str
     jwt_algorithm: str = os.getenv("JWT_ALGORITHM", "HS256")
 
