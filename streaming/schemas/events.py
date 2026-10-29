@@ -6,16 +6,16 @@ from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, Field
 
 class OrderCreatedEvent(BaseModel):
-    """Event envelope for orders_stream when a new order is ingested and assigned a facility."""
+    """Event envelope for a newly placed order before warehouse handoff."""
     event_id: str
     order_id: str
-    retailer_id: str
-    pickup_facility_id: str
+    merchant_id: str
+    warehouse_id: Optional[str] = None
     dropoff_location: str
     dropoff_raw_address: str
     time_window: str
     weight_kg: float
-    volume_l: float
+    volume_m3: float
     created_at: str
 
 class RoutePublishedEvent(BaseModel):
@@ -24,6 +24,8 @@ class RoutePublishedEvent(BaseModel):
     route_id: str
     vehicle_id: str
     driver_id: str
+    driver_name: str
+    vehicle_registration: str
     stops: List[Dict[str, Any]]
     created_at: str
 
@@ -38,4 +40,13 @@ class DriverTelemetryEvent(BaseModel):
     order_id: Optional[str] = None
     pod_photo_url: Optional[str] = None
     failure_reason: Optional[str] = None
+    timestamp: str
+
+
+class DriverRouteStartedEvent(BaseModel):
+    """Event envelope for a driver starting an assigned route."""
+    event_id: str
+    route_id: str
+    driver_id: str
+    event_type: str = "route.started"
     timestamp: str

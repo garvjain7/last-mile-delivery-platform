@@ -1,31 +1,38 @@
 # Accepts pings, dumps immediately to driver_events_stream
 # Router handling telemetry, stop status updates, and proof of delivery ingestion.
 
-from fastapi import APIRouter, HTTPException, status
-from pydantic import BaseModel
-from typing import Optional
+from fastapi import APIRouter, Header, HTTPException, status
+from pydantic import ValidationError
+
+from services.driver_gateway.app.auth.jwt import verify_driver_jwt
+from streaming.client import add_to_stream
+from streaming.schemas.events import DriverRouteStartedEvent, DriverTelemetryEvent
 
 router = APIRouter()
 
-class DriverEventRequest(BaseModel):
-    """Event ingestion payload sent by driver client offline replay or live sync."""
-    event_id: str
-    driver_id: str
-    event_type: str  # 'driver.location.updated', 'stop.arrived', 'delivery.completed', 'delivery.failed'
-    latitude: float
-    longitude: float
-    current_route_id: Optional[str] = None
-    order_id: Optional[str] = None
-    pod_photo_url: Optional[str] = None
-    failure_reason: Optional[str] = None
-    timestamp: str
-
 @router.post("/events", status_code=status.HTTP_202_ACCEPTED)
-async def ingest_driver_event(event: DriverEventRequest):
+async def ingest_driver_event(event: dict, authorization: str | None = Header(default=None)):
     """
     Ingest driver location pings or terminal status events and dump immediately to driver_events_stream.
     No database operations performed.
     """
-    # TODO: Verify driver JWT session
-    # TODO: Execute XADD driver_events_stream MAXLEN ~ 50000 with event payload
-    return {"status": "accepted", "event_id": event.event_id}
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid driver token")
+    claims = await verify_driver_jwt(authorization.removeprefix("Bearer "))
+    if claims is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid driver token")
+
+    driver_id = claims["driver_id"]
+    try:
+        if event.get("event_type") == "route.started":
+            validated = DriverRouteStartedEvent.model_validate({**event, "driver_id": driver_id})
+        else:
+            validated = DriverTelemetryEvent.model_validate({**event, "driver_id": driver_id})
+    except ValidationError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=exc.errors()) from exc
+
+    await add_to_stream(
+        "driver_events_stream",
+        validated.model_dump(mode="json"),
+    )
+    return {"status": "accepted", "event_id": validated.event_id}

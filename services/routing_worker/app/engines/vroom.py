@@ -4,7 +4,7 @@
 import asyncio
 import httpx
 from typing import Dict, Any
-from app.config import config
+from services.routing_worker.app.config import config
 
 class VROOMClient:
     """HTTP client for VROOM CVRPTW solver with explicit timeouts."""

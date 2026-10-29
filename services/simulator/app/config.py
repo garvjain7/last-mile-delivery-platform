@@ -2,7 +2,10 @@
 # Loads external API endpoint URLs for simulation runner.
 
 import os
+from dotenv import load_dotenv
 from pydantic import BaseModel
+
+load_dotenv()
 
 class SimulatorConfig(BaseModel):
     """Configuration properties for synthetic traffic simulator."""

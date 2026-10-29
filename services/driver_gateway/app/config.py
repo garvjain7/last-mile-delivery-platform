@@ -2,7 +2,10 @@
 # Loads environment variables once per-service into a structured config object.
 
 import os
+from dotenv import load_dotenv
 from pydantic import BaseModel
+
+load_dotenv()
 
 class DriverGatewayConfig(BaseModel):
     """Configuration properties for Driver Gateway service. Completely decoupled from Postgres."""

@@ -6,8 +6,7 @@ services:
     name: core-api
     env: python
     buildCommand: pip install -r services/core_api/requirements.txt
-    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
-    rootDir: services/core_api
+    startCommand: uvicorn services.core_api.app.main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: DATABASE_URL
         sync: false
@@ -20,8 +19,7 @@ services:
     name: routing-worker
     env: python
     buildCommand: pip install -r services/routing_worker/requirements.txt
-    startCommand: python -m app.main
-    rootDir: services/routing_worker
+    startCommand: python -m services.routing_worker.app.main
     envVars:
       - key: DATABASE_URL
         sync: false
@@ -36,8 +34,7 @@ services:
     name: control-tower
     env: python
     buildCommand: pip install -r services/control_tower/requirements.txt
-    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
-    rootDir: services/control_tower
+    startCommand: uvicorn services.control_tower.app.main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: REDIS_URL
         sync: false
@@ -46,8 +43,7 @@ services:
     name: driver-gateway
     env: python
     buildCommand: pip install -r services/driver_gateway/requirements.txt
-    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
-    rootDir: services/driver_gateway
+    startCommand: uvicorn services.driver_gateway.app.main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: REDIS_URL
         sync: false
@@ -62,8 +58,7 @@ services:
     name: simulator
     env: python
     buildCommand: pip install -r services/simulator/requirements.txt
-    startCommand: python -m app.main
-    rootDir: services/simulator
+    startCommand: python -m services.simulator.app.main
     envVars:
       - key: CORE_API_URL
         sync: false

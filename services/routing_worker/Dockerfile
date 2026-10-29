@@ -14,4 +14,4 @@ COPY services/routing_worker/app /app/services/routing_worker/app
 
 ENV PYTHONPATH=/app
 
-CMD ["python", "-m", "services.routing_worker.app.main"]
+CMD ["uvicorn", "services.routing_worker.app.main:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -1,10 +1,31 @@
 # THE SECURE DMZ EDGE — COMPLETELY DECOUPLED FROM POSTGRES
 # FastAPI application entrypoint for Driver Gateway service.
 
+from pathlib import Path
+
 from fastapi import FastAPI
-from app.ingestion.router import router as ingestion_router
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+from services.driver_gateway.app.ingestion.router import router as ingestion_router
 
 app = FastAPI(title="Driver Gateway API", version="1.0.0")
+FRONTEND_DIR = Path(__file__).resolve().parents[3] / "frontend"
+app.mount(
+    "/static/shared/js",
+    StaticFiles(directory=FRONTEND_DIR / "shared" / "js"),
+    name="shared-js",
+)
+for asset_type in ("css", "js"):
+    app.mount(
+        f"/static/driver-app/{asset_type}",
+        StaticFiles(directory=FRONTEND_DIR / "driver-app" / asset_type),
+        name=f"driver-app-{asset_type}",
+    )
+
+
+@app.get("/", include_in_schema=False)
+async def driver_app_page():
+    return FileResponse(FRONTEND_DIR / "driver-app" / "index.html")
 
 app.include_router(ingestion_router, prefix="/driver", tags=["Driver Ingestion"])
 

@@ -13,4 +13,4 @@ COPY services/driver_gateway/app /app/services/driver_gateway/app
 
 ENV PYTHONPATH=/app
 
-CMD ["uvicorn", "services.driver_gateway.app.main:app", "--host", "0.0.0.0", "--port", "8002"]
+CMD ["uvicorn", "services.driver_gateway.app.main:app", "--host", "0.0.0.0", "--port", "8000"]
