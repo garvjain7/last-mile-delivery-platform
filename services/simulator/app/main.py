@@ -101,8 +101,11 @@ async def run_one_order(address, seller_name, customer_email, merchant_email):
     (await staff.http.post(f"/api/hub/orders/{order['order_id']}/receive", json={})).raise_for_status()
     print("    status: pending (waiting at the hub)")
 
-    step(4, "Routing Worker", f"plans {hub['code']}'s waiting parcels onto free riders with VROOM")
-    out = worker_tick("services.routing_worker.app.plan_pending", "--hub", hub["code"], "--ignore-shifts")
+    step(4, "Routing Worker", f"plans {hub['code']}'s waiting parcels onto free riders with VROOM (ours marked urgent)")
+    # The simulated parcel is marked urgent so the planner fits it in even when the
+    # hub has more waiting parcels than its free riders can carry.
+    out = worker_tick("services.routing_worker.app.plan_pending", "--hub", hub["code"], "--ignore-shifts",
+                      "--priority", code)
     print("    " + "\n    ".join(out.splitlines()))
 
     step(5, "Rider apps", f"each {hub['code']} rider checks their route for the parcel")

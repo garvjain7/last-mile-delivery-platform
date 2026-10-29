@@ -29,3 +29,6 @@ email-validator==2.3.0
 setuptools<81
 # Routing run (services/routing_worker/app/plan_pending.py)
 pyvroom==1.15.2
+# Data loading and checks (scripts/reset_demo_db.py, tests/data)
+rdflib==7.6.0
+pyshacl==0.40.1

@@ -51,6 +51,8 @@ DIGIPIN  ──────┘
 ## Run it
 
 ```bash
+# extra packages for the build (Faker), plus the osmium CLI (brew install osmium-tool / apt install osmium-tool)
+pip install -r data/requirements.txt
 # one-time downloads (git-ignored, data/raw/)
 curl -L -o data/raw/osm/central-zone-261027.osm.pbf https://download.geofabrik.de/asia/india/central-zone-261027.osm.pbf
 # (Geofabrik removes dated files after a while; central-zone-latest.osm.pbf works too, with slightly different data)

@@ -50,24 +50,25 @@ async def load_hub(conn, hub_id):
     orders = await conn.fetch("""
         SELECT o.id, ST_Y(o.delivery_location::geometry) lat, ST_X(o.delivery_location::geometry) lon,
                o.weight_kg, o.volume_m3, coalesce(o.service_time_s, $2) service_s,
-               o.window_earliest, o.window_latest, o.merchant_order_ref,
+               o.window_earliest, o.window_latest, o.merchant_order_ref, o.tracking_token,
                ST_Distance(o.delivery_location, w.location) dist_m, w.service_radius_m
         FROM orders o JOIN warehouses w ON w.id = o.warehouse_id
         WHERE o.warehouse_id = $1 AND o.status = 'pending'
         ORDER BY o.created_at
         FOR UPDATE OF o SKIP LOCKED""", hub_id, DEFAULT_SERVICE_S)
     riders = await conn.fetch("""
-        SELECT d.user_id driver_id, v.id vehicle_id, v.type::text vtype, v.max_weight_kg, v.max_volume_m3,
+        SELECT d.user_id driver_id, u.email, v.id vehicle_id, v.type::text vtype, v.max_weight_kg, v.max_volume_m3,
                d.shift_start, d.shift_end
-        FROM drivers d JOIN vehicles v ON v.id = d.vehicle_id
+        FROM drivers d JOIN vehicles v ON v.id = d.vehicle_id JOIN users u ON u.id = d.user_id
         WHERE d.home_warehouse_id = $1 AND d.status = 'available' AND v.is_active
           AND NOT EXISTS (SELECT 1 FROM routes r WHERE r.driver_id = d.user_id AND r.status IN ('planned','in_progress'))
         ORDER BY v.type, v.registration_number""", hub_id)
     return orders, riders
 
 
-def solve(hub, orders, riders, start_at, ignore_shifts=False):
-    """Return (routes, skipped) where routes = [(rider, [(order, arrival_dt)])]."""
+def solve(hub, orders, riders, start_at, ignore_shifts=False, urgent=None):
+    """Return (routes, skipped) where routes = [(rider, [(order, arrival_dt)])].
+    `urgent` is a tracking code the planner must fit in first (VROOM job priority)."""
     skipped, jobs_src = [], []
     for o in orders:
         if o["service_radius_m"] and o["dist_m"] > o["service_radius_m"]:
@@ -113,7 +114,8 @@ def solve(hub, orders, riders, start_at, ignore_shifts=False):
             tws = [vroom.TimeWindow(int((a - t0).total_seconds()), int((o["window_latest"] - t0).total_seconds()))]
         jobs.append(vroom.Job(id=j + 1, location=j + 1, default_service=int(o["service_s"]),
                               delivery=[max(1, int(float(o["volume_m3"]) * 1e6)), max(1, int(float(o["weight_kg"]) * 1000))],
-                              skills={1} if bulky else set(), time_windows=tws))
+                              skills={1} if bulky else set(), time_windows=tws,
+                              priority=100 if o["tracking_token"] == urgent else 0))
     inp.add_job(jobs)
     sol = inp.solve(exploration_level=3, nb_threads=4)
     routes, assigned = [], set()
@@ -153,7 +155,8 @@ async def write(conn, hub_id, routes, now):
                 VALUES ($1, 'pending', 'assigned', $2, $3)""", o["id"], stop_id, now)
 
 
-async def main(dry_run, at, hub_code=None, ignore_shifts=False):
+async def main(dry_run, at, hub_code=None, ignore_shifts=False, track=None, urgent=None):
+    track = track or urgent
     load_dotenv()
     url = re.sub(r"\?.*$", "?sslmode=require", os.environ["DATABASE_URL"].replace("postgresql+asyncpg://", "postgresql://"))
     conn = await asyncpg.connect(url)
@@ -167,16 +170,22 @@ async def main(dry_run, at, hub_code=None, ignore_shifts=False):
             hub = dict(h, tz=ZoneInfo("Asia/Kolkata"))
             async with conn.transaction():
                 orders, riders = await load_hub(conn, h["id"])
-                routes, skipped = solve(hub, orders, riders, now, ignore_shifts)
+                routes, skipped = solve(hub, orders, riders, now, ignore_shifts, urgent)
                 if not dry_run:
                     await write(conn, h["id"], routes, now)
             n = sum(len(s) for _, s, _, _ in routes)
             print(f"{h['code']}: {len(orders)} pending, {len(riders)} riders free -> {len(routes)} routes, {n} parcels assigned")
             for rider, stops, end, dist in routes:
-                print(f"    {rider['vtype']:13} {len(stops):3} stops  {dist / 1000:5.1f} km  back {end.astimezone(hub['tz']):%H:%M}")
+                print(f"    {rider['vtype']:13} {len(stops):3} stops  {dist / 1000:5.1f} km  back {end.astimezone(hub['tz']):%H:%M}"
+                      f"  rider {rider['email']}")
+                for seq, (o, _) in enumerate(stops, start=1):
+                    if track and o["tracking_token"] == track:
+                        print(f"    -> {track} is stop {seq} for {rider['email']}")
             reasons = defaultdict(list)
             for o, why in skipped:
                 reasons[why].append(o["merchant_order_ref"])
+                if track and o["tracking_token"] == track:
+                    print(f"    -> {track} was not planned: {why}")
             for why, refs in reasons.items():
                 print(f"    not planned ({why}): {len(refs)}  e.g. {', '.join(refs[:3])}")
             totals["routes"] += len(routes); totals["assigned"] += n; totals["skipped"] += len(skipped)
@@ -192,5 +201,7 @@ if __name__ == "__main__":
     ap.add_argument("--at", type=datetime.fromisoformat, help="plan as of this time (ISO, with offset); default now")
     ap.add_argument("--hub", help="plan only this warehouse code, e.g. RPR-URLA")
     ap.add_argument("--ignore-shifts", action="store_true", help="simulation: every free rider counts as on shift")
+    ap.add_argument("--track", help="say which rider and stop this tracking code got, or why it was not planned")
+    ap.add_argument("--priority", metavar="CODE", help="urgent parcel: plan it first (VROOM priority), then report like --track")
     a = ap.parse_args()
-    asyncio.run(main(a.dry_run, a.at, a.hub, a.ignore_shifts))
+    asyncio.run(main(a.dry_run, a.at, a.hub, a.ignore_shifts, a.track, a.priority))
