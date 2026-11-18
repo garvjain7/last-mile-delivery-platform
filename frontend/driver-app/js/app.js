@@ -2,7 +2,7 @@ import { state, appRoot, escapeHTML, notify } from "./state.js";
 import { openDatabase, restoreWorkState, refreshOutboxCount, removeLegacyDemoData, clearWorkState } from "./storage.js";
 import { apiRequest } from "./api.js";
 import { render } from "./views.js";
-import { syncOutbox, acceptRoute, confirmPickup, scanPickupParcel, scanStopParcel, arriveAtStop, openDelivery, openException, openRouteDetails, startLocation } from "./services/driver-events.js";
+import { syncOutbox, acceptRoute, confirmPickup, scanPickupParcel, scanStopParcel, arriveAtStop, openDelivery, openException, openRouteDetails, startLocation, startDemoLocationSimulation, stopLocationTracking, stopDemoLocationSimulation } from "./services/driver-events.js";
 import { loadDriverAccount, searchVehicles, finishRoute, saveProfileSettings } from "./services/account.js";
 import { dismissCustomerNoteUpdate, openCustomerChat, receiveCustomerNoteUpdate } from "./components/communications.js";
 import { showOrderRequest } from "./components/order-request.js";
@@ -25,6 +25,8 @@ async function restoreCentralSession() {
         render();
         await syncOutbox({ quiet: true });
     } catch (error) {
+        stopLocationTracking();
+        stopDemoLocationSimulation();
         console.warn("Could not restore the centralized driver session.", error);
         state.sessionMessage = navigator.onLine
             ? "Sign in through your organization's centralized authentication, then check your session again."
@@ -35,6 +37,8 @@ async function restoreCentralSession() {
 }
 
 function clearDriverSessionState() {
+    stopLocationTracking();
+    stopDemoLocationSimulation();
     state.identity = null;
     state.driverUserId = null;
     state.route = null;
@@ -47,6 +51,9 @@ function clearDriverSessionState() {
     state.failed = new Set();
     state.arrived = new Set();
     state.location = null;
+    state.demoLocation = null;
+    state.demoProgress = null;
+    state.locationMode = "off";
     state.locationStatus = "Location not shared";
     state.outboxCount = 0;
     state.isSyncing = false;
@@ -147,6 +154,7 @@ document.addEventListener("click", async (event) => {
     if (action === "confirm-sos") showSosConfirmation();
     if (action === "sync") await syncOutbox();
     if (action === "start-location") await startLocation();
+    if (action === "demo-gps") startDemoLocationSimulation();
     if (action === "search-vehicles") await searchVehicles();
     if (action === "save-profile-settings") saveProfileSettings();
     if (action === "close-dialog") button.closest("dialog")?.close();

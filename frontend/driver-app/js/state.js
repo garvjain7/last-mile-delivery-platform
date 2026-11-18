@@ -22,6 +22,9 @@ export const state = {
     failed: new Set(),
     arrived: new Set(),
     location: null,
+    demoLocation: null,
+    demoProgress: null,
+    locationMode: "off",
     locationStatus: "Location not shared",
     outboxCount: 0,
     isSyncing: false,
@@ -43,6 +46,10 @@ export function readSettings() {
 
 export function saveSettings() {
     localStorage.setItem("driver.settings", JSON.stringify(state.settings));
+}
+
+export function demoGpsPreviewEnabled() {
+    return new URLSearchParams(window.location.search).get("demoGps") === "1";
 }
 
 export function escapeHTML(value) {

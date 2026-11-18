@@ -69,6 +69,8 @@ class RouteStopResponse(BaseModel):
     window_earliest: Optional[str]
     window_latest: Optional[str]
     planned_arrival_at: str
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
 
 
 class DriverRouteResponse(BaseModel):
@@ -81,6 +83,8 @@ class DriverRouteResponse(BaseModel):
     pickup_name: str
     pickup_address: str
     pickup_code: str
+    pickup_latitude: Optional[float] = None
+    pickup_longitude: Optional[float] = None
     vehicle_id: UUID
     vehicle_registration: str
     stops: list[RouteStopResponse]

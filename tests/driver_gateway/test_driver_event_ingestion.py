@@ -263,3 +263,56 @@ def test_pod_upload_authorizes_route_stores_private_object_and_publishes_event(m
     assert published[0][0] == "driver_events_stream"
     assert published[0][1]["event_type"] == "pod.captured"
     assert published[0][1]["object_key"] == uploaded_objects[0][0]
+
+
+def test_pod_upload_stops_when_core_api_denies_stop_authorization(monkeypatch):
+    async def verify_token(_token):
+        return {"driver_id": str(uuid4())}
+
+    class FakeCoreAPIClient:
+        async def post(self, _url, **_kwargs):
+            return httpx.Response(403, json={"detail": "Stop is not open."})
+
+    class FakeStorage:
+        def upload_evidence(self, *_args):
+            pytest.fail("Unauthorized proof must not be stored.")
+
+    async def add_to_stream(*_args):
+        pytest.fail("Unauthorized proof must not be published.")
+
+    monkeypatch.setattr(ingestion, "core_api_client", FakeCoreAPIClient())
+    monkeypatch.setattr(ingestion, "storage_client", FakeStorage())
+    monkeypatch.setattr(ingestion, "verify_driver_jwt", verify_token)
+    monkeypatch.setattr(ingestion, "add_to_stream", add_to_stream)
+    request = Request(
+        {
+            "type": "http",
+            "http_version": "1.1",
+            "method": "POST",
+            "scheme": "http",
+            "path": "/driver/pod",
+            "raw_path": b"/driver/pod",
+            "query_string": b"",
+            "headers": [(b"cookie", b"access_token=cookie-token")],
+            "server": ("testserver", 80),
+            "client": ("testclient", 50000),
+        }
+    )
+
+    with pytest.raises(HTTPException) as error_info:
+        asyncio.run(
+            ingestion.upload_driver_evidence(
+                request=request,
+                event_id=uuid4(),
+                route_id=uuid4(),
+                order_id=uuid4(),
+                evidence_type="recipient_name",
+                purpose="pod",
+                recipient_name="Recipient",
+                file=None,
+                authorization=None,
+                access_token="cookie-token",
+            )
+        )
+
+    assert error_info.value.status_code == 403

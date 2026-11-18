@@ -329,8 +329,17 @@ textarea.text-input { min-height: 82px; padding: 11px 12px; resize: vertical; }
 .text-input[type="file"] { height: auto; padding: 10px; }
 .scanner-video { display: block; width: 100%; max-height: 260px; margin: 14px 0; border-radius: 11px; background: #17251f; object-fit: cover; }
 .scanner-video[hidden] { display: none; }
+.scanner-camera-controls { display: flex; gap: 10px; margin: 10px 0; }
+.scanner-camera-controls .button { flex: 1; justify-content: center; gap: 8px; }
+.scanner-camera-controls .button[hidden] { display: none; }
+.scanner-camera-icon { width: 20px; height: 20px; flex: 0 0 auto; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .scanner-status { margin: 10px 0; color: #68776d; font-size: 11px; line-height: 1.5; }
 .scanner-demo-button { margin-top: 8px; padding: 6px 0; border: 0; color: #176b48; background: transparent; font: inherit; text-align: left; text-decoration: underline; cursor: pointer; }
+.pod-camera { margin: 10px 0; }
+.pod-camera[hidden], .pod-camera-video[hidden], .pod-camera-photo[hidden] { display: none; }
+.pod-camera-video, .pod-camera-photo { display: block; width: 100%; max-height: 320px; margin: 8px 0; border-radius: 11px; background: #17251f; object-fit: contain; }
+.pod-camera-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.pod-camera-status { min-height: 1.5em; margin: 7px 0; color: #68776d; font-size: 11px; line-height: 1.5; }
 .signature-wrap[hidden] { display: none; }
 .signature-pad { display: block; width: 100%; height: 150px; margin: 8px 0; border: 1px solid #cad4c7; border-radius: 9px; background: #fff; touch-action: none; }
 .dialog-actions { display: flex; gap: 10px; margin-top: 18px; }
@@ -827,7 +836,9 @@ body {
 .vehicle-compliance-badge > span:first-child { width: 22px; height: 22px; display: grid; flex: 0 0 auto; place-items: center; border-radius: 50%; color: #1d4ed8; background: #dbeafe; font-weight: 800; }
 .proof-method-grid, .failure-reason-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; margin: 10px 0 16px; }
 .proof-method { min-height: 76px; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 6px; padding: 10px; border: 1px solid #cbd5e1; border-radius: 11px; color: #334155; background: #fff; text-align: left; cursor: pointer; }
+.proof-method-required { cursor: default; border-color: #86efac; background: #f0fdf4; }
 .proof-method > span { color: #1d4ed8; font-size: 20px; }
+.proof-method-required > span { color: #15803d; }
 .proof-method strong { font-size: 13px; line-height: 1.35; }
 .proof-method.is-selected { border-color: #2563eb; box-shadow: 0 0 0 2px #bfdbfe; background: #eff6ff; }
 .delivery-instructions { display: grid; gap: 4px; margin: 12px 0; padding: 14px; border-left: 4px solid #f59e0b; border-radius: 7px; color: #78350f; background: #fffbeb; font-size: 14px; line-height: 1.45; }
@@ -955,6 +966,14 @@ body {
 .order-request-overlay[open] .order-request-card { animation: request-enter .2s ease-out; }
 @keyframes request-enter { from { opacity: 0; transform: translateY(12px) scale(.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
 .merchant-contact-status { margin: 7px 0 12px; color: #475569; font-size: 13px; }
+.gps-mode-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin: 0 0 14px; padding: 12px; border: 1px solid #dbe4ed; border-radius: 12px; background: #f8fafc; }
+.gps-mode-controls > div { min-width: 180px; flex: 1; }
+.gps-mode-controls strong, .gps-mode-controls small { display: block; }
+.gps-mode-controls strong { color: #17212b; font-size: 14px; }
+.gps-mode-controls small { margin-top: 4px; color: #475569; font-size: 12px; line-height: 1.4; }
+.demo-route-preview { display: block; width: min(100%, 520px); margin: 10px auto; }
+.demo-route-preview text { fill: #475569; font-family: inherit; font-size: 11px; font-weight: 700; }
+.demo-gps-warning { margin: 12px 0; padding: 12px; border: 1px solid #f3d28a; border-radius: 10px; color: #744d00; background: #fff8e7; font-size: 13px; line-height: 1.45; }
 
 @media (max-width: 380px) {
     .availability-panel, .daily-metrics-panel, .wallet-breakdown, .trip-ledger, .order-checklist, .verification-panel { padding: 14px; }

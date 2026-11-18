@@ -127,6 +127,11 @@ proxied by Gateway, plus `POST /driver/pod` for MinIO evidence uploads. The
 complete current route, scan, upload, and event contract is documented in
 [`driver-app.md`](./driver-app.md).
 
+`GET /driver/routes` includes the assigned warehouse and planned stop latitude/
+longitude derived from their PostGIS points. Those fields support active-stop
+navigation and the explicitly local-only GPS preview; preview coordinates are
+never sent as driver telemetry.
+
 The PWA may authenticate event ingestion with the signed-in `access_token`
 HttpOnly cookie; non-browser clients may use a Bearer JWT. Gateway acceptance
 means Redis append only. It does not persist delivery outcomes, PODs, scans, or

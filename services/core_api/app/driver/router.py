@@ -30,6 +30,7 @@ from services.core_api.app.driver.service import (
     normalize_registration_number,
     profile_payload,
     route_payload,
+    route_location_payload,
     update_driver_profile,
 )
 
@@ -136,7 +137,8 @@ async def get_routes(
 ):
     """List routes already assigned to this driver that are planned or in progress."""
     routes = await list_driver_routes(db, user.id)
-    return [route_payload(route) for route in routes]
+    locations = await route_location_payload(db, [route.id for route in routes])
+    return [route_payload(route, locations.get(route.id)) for route in routes]
 
 
 @router.post(
@@ -152,6 +154,7 @@ async def post_accept_route(
     """Start an assigned planned route; repeated acceptance is idempotent."""
     try:
         route, driver = await accept_assigned_route(db, user.id, route_id)
+        locations = await route_location_payload(db, [route.id])
         await db.commit()
     except LookupError as exc:
         await db.rollback()
@@ -159,7 +162,10 @@ async def post_accept_route(
     except RuntimeError as exc:
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
-    return {"route": route_payload(route), "driver_status": driver.status.value}
+    return {
+        "route": route_payload(route, locations.get(route.id)),
+        "driver_status": driver.status.value,
+    }
 
 
 @router.post("/routes/{route_id}/scan", status_code=status.HTTP_200_OK)

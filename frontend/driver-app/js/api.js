@@ -37,6 +37,8 @@ export function normalizeDriverRoute(route) {
         duration_min: route.total_duration_s == null ? 0 : Math.round(route.total_duration_s / 60),
         pickup: route.pickup_name,
         pickup_address: route.pickup_address,
+        pickup_latitude: route.pickup_latitude == null ? null : Number(route.pickup_latitude),
+        pickup_longitude: route.pickup_longitude == null ? null : Number(route.pickup_longitude),
         pickup_code: route.pickup_code,
         vehicle_id: route.vehicle_id,
         vehicle_registration: route.vehicle_registration,
@@ -49,6 +51,8 @@ export function normalizeDriverRoute(route) {
             recipient_phone: stop.recipient_phone,
             address: stop.delivery_address,
             tracking_token: stop.tracking_token,
+            latitude: stop.latitude == null ? null : Number(stop.latitude),
+            longitude: stop.longitude == null ? null : Number(stop.longitude),
             window: stop.window_earliest && stop.window_latest
                 ? `${timeLabel(stop.window_earliest)} – ${timeLabel(stop.window_latest)}`
                 : timeLabel(stop.planned_arrival_at),

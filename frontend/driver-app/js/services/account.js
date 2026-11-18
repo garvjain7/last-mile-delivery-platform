@@ -2,7 +2,8 @@ import { state, notify, saveSettings } from "../state.js";
 import { clearWorkState, persistWorkState } from "../storage.js";
 import { apiRequest, normalizeDriverRoute } from "../api.js";
 import { render } from "../views.js";
-import { syncOutbox } from "./driver-events.js";
+import { syncOutbox, stopLocationTracking, stopDemoLocationSimulation } from "./driver-events.js";
+import { isPickupConfirmedForRoute } from "./route-state.mjs";
 
 export async function loadDriverAccount(identity) {
     const [profile, routes, vehicles] = await Promise.all([
@@ -23,17 +24,27 @@ export async function loadDriverAccount(identity) {
     state.vehicles = vehicles;
     const serverRoute = state.driverRoutes.find((route) => route.status === "in_progress") || null;
     const savedRoute = state.route;
+    if (savedRoute?.route_id !== serverRoute?.route_id) {
+        stopLocationTracking();
+        stopDemoLocationSimulation();
+    }
     state.route = serverRoute;
     if (serverRoute) {
-        state.pickedUp = savedRoute?.route_id === serverRoute.route_id && state.pickedUp;
+        state.pickedUp = isPickupConfirmedForRoute(serverRoute, savedRoute);
         if (savedRoute?.route_id !== serverRoute.route_id) {
             state.customerNoteUpdates = {};
             state.pickupScanned = new Set();
             state.stopScanned = new Set();
-            state.completed = new Set(serverRoute.stops.filter((stop) => stop.status === "delivered").map((stop) => stop.order_id));
-            state.failed = new Set(serverRoute.stops.filter((stop) => stop.status === "failed").map((stop) => stop.order_id));
             state.arrived = new Set();
         }
+        state.completed = new Set([
+            ...state.completed,
+            ...serverRoute.stops.filter((stop) => stop.status === "delivered").map((stop) => stop.order_id)
+        ]);
+        state.failed = new Set([
+            ...state.failed,
+            ...serverRoute.stops.filter((stop) => stop.status === "failed").map((stop) => stop.order_id)
+        ]);
         await persistWorkState();
     } else {
         state.customerNoteUpdates = {};
@@ -79,6 +90,8 @@ export async function finishRoute() {
         return;
     }
     state.route = null;
+    stopLocationTracking();
+    stopDemoLocationSimulation();
     state.pickedUp = false;
     state.pickupScanned = new Set();
     state.stopScanned = new Set();

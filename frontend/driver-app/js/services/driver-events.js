@@ -1,4 +1,4 @@
-import { state, escapeHTML, formatCount, notify } from "../state.js";
+import { state, escapeHTML, formatCount, notify, demoGpsPreviewEnabled } from "../state.js";
 import {
     enqueueOutboxRecord,
     outboxTransaction,
@@ -11,8 +11,56 @@ import { routeMap } from "../components/routes.js";
 import { scanBarcode, showScanWarning } from "../components/scanner.js";
 import { captureException, captureProofOfDelivery } from "../components/pod.js";
 
+const LOCATION_TELEMETRY_INTERVAL_MS = 30_000;
+const LOCATION_TELEMETRY_MIN_DISTANCE_M = 50;
+const DEMO_TRAVEL_DURATION_MS = 20_000;
+const LOCATION_RENDER_INTERVAL_MS = 5_000;
+
+let locationWatchId = null;
+let demoLocationTimer = null;
+let lastLocationEventAt = 0;
+let lastLocationEvent = null;
+let lastLocationRenderAt = 0;
+let locationEventPending = false;
+
 export function eventLocation() {
     return state.location ? { latitude: state.location.latitude, longitude: state.location.longitude } : null;
+}
+
+function distanceMeters(first, second) {
+    const radians = (degrees) => degrees * Math.PI / 180;
+    const latitudeDelta = radians(second.latitude - first.latitude);
+    const longitudeDelta = radians(second.longitude - first.longitude);
+    const firstLatitude = radians(first.latitude);
+    const secondLatitude = radians(second.latitude);
+    const haversine = Math.sin(latitudeDelta / 2) ** 2
+        + Math.cos(firstLatitude) * Math.cos(secondLatitude) * Math.sin(longitudeDelta / 2) ** 2;
+    return 6_371_000 * 2 * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine));
+}
+
+async function queueLocationEvent(location) {
+    if (!state.route || !state.driverUserId || locationEventPending) return;
+    const now = Date.now();
+    const movedEnough = lastLocationEvent
+        && distanceMeters(lastLocationEvent, location) >= LOCATION_TELEMETRY_MIN_DISTANCE_M;
+    if (
+        lastLocationEvent
+        && !movedEnough
+        && now - lastLocationEventAt < LOCATION_TELEMETRY_INTERVAL_MS
+    ) return;
+
+    locationEventPending = true;
+    try {
+        await queueEvent("driver.location.updated", {
+            latitude: location.latitude,
+            longitude: location.longitude,
+            current_route_id: state.route.route_id
+        });
+        lastLocationEvent = { latitude: location.latitude, longitude: location.longitude };
+        lastLocationEventAt = now;
+    } finally {
+        locationEventPending = false;
+    }
 }
 
 export async function queueEvent(eventType, details = {}, attachment = null) {
@@ -39,6 +87,7 @@ export async function queueEvent(eventType, details = {}, attachment = null) {
 }
 
 export function getLocation() {
+    if (state.locationMode === "demo") stopDemoLocationSimulation();
     if (!("geolocation" in navigator)) {
         return Promise.reject(new Error("This device does not support location services."));
     }
@@ -64,6 +113,90 @@ export function getLocation() {
             reject(new Error(messages[error.code] || "Unable to access location."));
         }, { enableHighAccuracy: true, timeout: 12000, maximumAge: 30000 });
     });
+}
+
+export function stopLocationTracking() {
+    if (locationWatchId !== null) {
+        navigator.geolocation.clearWatch(locationWatchId);
+        locationWatchId = null;
+    }
+    if (state.locationMode === "live") {
+        state.locationMode = "off";
+        state.locationStatus = state.location
+            ? "Live GPS tracking paused"
+            : "Location not shared";
+    }
+}
+
+export function stopDemoLocationSimulation({ notifyUser = false } = {}) {
+    if (demoLocationTimer !== null) {
+        window.clearInterval(demoLocationTimer);
+        demoLocationTimer = null;
+    }
+    state.demoLocation = null;
+    state.demoProgress = null;
+    if (state.locationMode === "demo") {
+        state.locationMode = "off";
+        state.locationStatus = "Location not shared";
+    }
+    if (notifyUser) notify("Demo GPS preview stopped. No simulated location was sent.", "info");
+}
+
+export function startDemoLocationSimulation() {
+    if (!demoGpsPreviewEnabled()) {
+        notify("Demo GPS preview is disabled for this app session.", "error");
+        return;
+    }
+    if (state.locationMode === "demo") {
+        stopDemoLocationSimulation({ notifyUser: true });
+        render();
+        return;
+    }
+    if (!state.route || !state.pickedUp) {
+        notify("Start a route and confirm pickup before previewing the demo drive.", "error");
+        return;
+    }
+
+    const target = state.route.stops.find((stop) => (
+        !state.completed.has(stop.order_id) && !state.failed.has(stop.order_id)
+    ));
+    if (!target || !Number.isFinite(target.latitude) || !Number.isFinite(target.longitude)) {
+        notify("The next stop has no route coordinates for a GPS preview.", "error");
+        return;
+    }
+    if (!Number.isFinite(state.route.pickup_latitude) || !Number.isFinite(state.route.pickup_longitude)) {
+        notify("The route pickup has no coordinates for a GPS preview.", "error");
+        return;
+    }
+
+    stopLocationTracking();
+    if (demoLocationTimer !== null) window.clearInterval(demoLocationTimer);
+    const start = {
+        latitude: state.route.pickup_latitude,
+        longitude: state.route.pickup_longitude
+    };
+    const startedAt = Date.now();
+    state.locationMode = "demo";
+    state.locationStatus = "Demo GPS preview · local only";
+    state.demoLocation = { ...start, timestamp: new Date(startedAt).toISOString() };
+    state.demoProgress = 0;
+    render();
+
+    demoLocationTimer = window.setInterval(() => {
+        const progress = Math.min((Date.now() - startedAt) / DEMO_TRAVEL_DURATION_MS, 1);
+        state.demoProgress = progress;
+        state.demoLocation = {
+            latitude: start.latitude + (target.latitude - start.latitude) * progress,
+            longitude: start.longitude + (target.longitude - start.longitude) * progress,
+            timestamp: new Date().toISOString()
+        };
+        render();
+        if (progress === 1) {
+            window.clearInterval(demoLocationTimer);
+            demoLocationTimer = null;
+            notify(`Demo preview reached ${target.recipient}'s stop. This location was not sent to the Gateway.`, "info");
+        }
+    }, 500);
 }
 
 export async function recordTelemetry(eventType, details = {}, attachment = null) {
@@ -399,11 +532,22 @@ export function openDelivery(orderId) {
         if (!proof) return;
         try {
             await getLocation();
-            await queueEvent("pod.captured", {
+            const evidenceDetails = {
                 route_id: state.route.route_id,
                 order_id: orderId,
                 purpose: "pod"
-            }, proof);
+            };
+            await queueEvent("pod.captured", evidenceDetails, {
+                evidenceType: "photo",
+                file: proof.file,
+                recipientName: proof.recipientName
+            });
+            if (proof.signatureFile) {
+                await queueEvent("pod.captured", evidenceDetails, {
+                    evidenceType: "signature",
+                    file: proof.signatureFile
+                });
+            }
             await recordTelemetry("delivery.completed", { order_id: orderId });
             state.completed.add(orderId);
             state.arrived.delete(orderId);
@@ -495,12 +639,58 @@ export function openRouteDetails(routeId) {
 }
 
 export async function startLocation() {
-    try {
-        const location = await getLocation();
+    if (locationWatchId !== null) {
+        stopLocationTracking();
         render();
-        await recordTelemetry("driver.location.updated", {});
-        notify(`GPS check-in saved · ${location.latitude.toFixed(4)}, ${location.longitude.toFixed(4)}`, "success");
+        notify("Live GPS tracking paused.", "info");
+        return;
+    }
+    stopDemoLocationSimulation();
+    if (!("geolocation" in navigator)) {
+        notify("This device does not support live GPS tracking.", "error");
+        return;
+    }
+
+    lastLocationEventAt = 0;
+    lastLocationEvent = null;
+    lastLocationRenderAt = 0;
+    state.locationMode = "live";
+    state.locationStatus = "Waiting for a live GPS fix…";
+    render();
+    try {
+        locationWatchId = navigator.geolocation.watchPosition((position) => {
+            state.location = {
+                latitude: position.coords.latitude,
+                longitude: position.coords.longitude,
+                accuracy: position.coords.accuracy,
+                timestamp: new Date(position.timestamp).toISOString()
+            };
+            state.locationStatus = `Live GPS · ±${Math.round(position.coords.accuracy)} m`;
+            if (Date.now() - lastLocationRenderAt >= LOCATION_RENDER_INTERVAL_MS) {
+                lastLocationRenderAt = Date.now();
+                render();
+            }
+            void queueLocationEvent(state.location).catch((error) => {
+                console.error("Could not queue live GPS telemetry.", error);
+                notify("Live GPS could not be queued. The location is still updating on this device.", "error");
+            });
+        }, (error) => {
+            if (locationWatchId !== null) navigator.geolocation.clearWatch(locationWatchId);
+            locationWatchId = null;
+            state.locationMode = "off";
+            state.locationStatus = "Live GPS unavailable";
+            render();
+            const messages = {
+                1: "Allow location access to share live GPS.",
+                2: "GPS could not determine your location. Try again outdoors.",
+                3: "GPS request timed out. Try again."
+            };
+            notify(messages[error.code] || "Unable to access live GPS.", "error");
+        }, { enableHighAccuracy: true, timeout: 15_000, maximumAge: 5_000 });
     } catch (error) {
-        notify(error.message, "error");
+        state.locationMode = "off";
+        state.locationStatus = "Live GPS unavailable";
+        render();
+        notify(error.message || "Unable to start live GPS tracking.", "error");
     }
 }

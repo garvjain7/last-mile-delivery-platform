@@ -1,4 +1,4 @@
-const CACHE_NAME = "fieldnote-driver-v28";
+const CACHE_NAME = "fieldnote-driver-v39";
 const APP_SHELL = [
     "/",
     "/static/driver-app/css/style.css",
@@ -20,7 +20,9 @@ const APP_SHELL = [
     "/static/driver-app/js/components/scanner.js",
     "/static/driver-app/js/components/pod.js",
     "/static/driver-app/js/services/driver-events.js",
-    "/static/driver-app/js/services/account.js"
+    "/static/driver-app/js/services/account.js",
+    "/static/driver-app/js/services/route-state.mjs",
+    "/static/driver-app/js/services/barcode-scanner.js"
 ];
 
 self.addEventListener("install", (event) => {

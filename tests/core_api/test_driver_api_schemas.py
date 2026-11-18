@@ -1,17 +1,20 @@
+import asyncio
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
 from pydantic import ValidationError
+from sqlalchemy.dialects import postgresql
 
 from services.core_api.app.driver.schemas import (
     AssignVehicleRequest,
     DriverProfilePatch,
+    DriverRouteResponse,
     DriverScanValidationRequest,
     RouteStopResponse,
 )
-from services.core_api.app.driver.service import route_payload
+from services.core_api.app.driver.service import route_location_payload, route_payload
 
 
 def test_driver_profile_patch_requires_a_nonblank_change():
@@ -103,7 +106,16 @@ def test_route_payload_orders_stops_and_uses_schema_fields():
         ],
     )
 
-    response = route_payload(route)
+    response = route_payload(
+        route,
+        {
+            "pickup": {"latitude": 12.9, "longitude": 77.5},
+            "stops": {
+                route.stops[0].id: {"latitude": 12.91, "longitude": 77.51},
+                route.stops[1].id: {"latitude": 12.92, "longitude": 77.52},
+            },
+        },
+    )
 
     assert response["route_id"] == route_id
     assert response["status"] == "planned"
@@ -113,4 +125,44 @@ def test_route_payload_orders_stops_and_uses_schema_fields():
     assert response["stops"][0]["tracking_token"] == "tracking-first"
     assert response["stops"][0]["order_status"] == "out_for_delivery"
     assert response["stops"][0]["window_earliest"] == planned_arrival.isoformat()
+    assert response["pickup_latitude"] == 12.9
+    assert response["pickup_longitude"] == 77.5
+    assert response["stops"][0]["latitude"] == 12.92
+    assert response["stops"][0]["longitude"] == 77.52
     assert RouteStopResponse.model_validate(response["stops"][0]).order_status == "out_for_delivery"
+    assert DriverRouteResponse.model_validate(response).pickup_latitude == 12.9
+
+
+def test_route_location_payload_uses_pickup_and_planned_stop_points():
+    route_id = uuid4()
+    stop_id = uuid4()
+
+    class Result:
+        def __init__(self, rows):
+            self.rows = rows
+
+        def all(self):
+            return self.rows
+
+    class Database:
+        statements = []
+        results = [
+            [(route_id, 12.9, 77.5)],
+            [(route_id, stop_id, 12.91, 77.51)],
+        ]
+
+        async def execute(self, statement):
+            self.statements.append(str(statement.compile(dialect=postgresql.dialect())))
+            return Result(self.results.pop(0))
+
+    database = Database()
+    locations = asyncio.run(route_location_payload(database, [route_id]))
+
+    assert locations == {
+        route_id: {
+            "pickup": {"latitude": 12.9, "longitude": 77.5},
+            "stops": {stop_id: {"latitude": 12.91, "longitude": 77.51}},
+        }
+    }
+    assert "warehouses.location" in database.statements[0]
+    assert "route_stops.planned_location" in database.statements[1]

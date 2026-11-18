@@ -76,7 +76,7 @@ export function todayView() {
                 : `<div class="empty-state empty-state-small"><span>↗</span><h3>No planned routes</h3><p>Routes assigned to your driver profile will appear here.</p></div>`}
         `}
         <section class="location-strip">
-            <span class="location-icon">⌖</span><div><strong>Location services</strong><small>${escapeHTML(state.locationStatus)}</small></div><button class="text-button" data-action="start-location">${state.location ? "Refresh" : "Enable"} <span>→</span></button>
+            <span class="location-icon">⌖</span><div><strong>Location services</strong><small>${escapeHTML(state.locationStatus)}</small></div><button class="text-button" data-action="start-location">${state.locationMode === "live" ? "Pause" : "Enable"} <span>→</span></button>
         </section>
         <section class="home-earnings-preview">
             <div><p class="eyebrow">EARNINGS PREVIEW</p><strong>Payout data unavailable</strong><small>${completedStops} delivered ${completedStops === 1 ? "stop" : "stops"} · amount not provided</small></div>

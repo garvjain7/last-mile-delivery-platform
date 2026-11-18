@@ -1,4 +1,4 @@
-import { state, escapeHTML } from "../state.js";
+import { state, escapeHTML, demoGpsPreviewEnabled } from "../state.js";
 import {
     customerCommunicationActions,
     customerNoteUpdateBanner
@@ -38,23 +38,60 @@ function activePhaseMap(route, stop) {
     const isPickup = !state.pickedUp;
     const destination = isPickup ? route.pickup_address || route.pickup : stop?.address;
     const label = isPickup ? "Depot pickup" : "Customer doorstep";
+    const liveOrigin = state.locationMode === "live" && state.location
+        ? `${state.location.latitude},${state.location.longitude}`
+        : "";
+    const liveCoordinates = state.locationMode === "live" && state.location
+        ? ` · ${state.location.latitude.toFixed(5)}, ${state.location.longitude.toFixed(5)}`
+        : "";
+    const locationControls = `<div class="gps-mode-controls">
+        <div><strong>${escapeHTML(state.locationStatus)}</strong><small>${state.locationMode === "live"
+            ? `Actual device GPS is shared through the driver event queue${liveCoordinates}.`
+            : state.locationMode === "demo"
+                ? "Demo preview only. Simulated coordinates are never sent to the Gateway."
+                : "Live GPS is off. Arrival and delivery actions still request an actual device fix."}</small></div>
+        <button class="button button-secondary button-small" data-action="start-location">${state.locationMode === "live" ? "Pause live GPS" : "Start live GPS"}</button>
+        ${demoGpsPreviewEnabled() && state.pickedUp
+            ? `<button class="button button-secondary button-small" data-action="demo-gps">${state.locationMode === "demo" ? "Stop demo preview" : "Demo GPS preview"}</button>`
+            : ""}
+    </div>`;
     if (!destination) {
-        return `<section class="route-map-section"><div class="section-heading"><div><p class="eyebrow">ACTIVE NAVIGATION</p><h3>${label}</h3></div></div><p class="map-message">The destination address is unavailable.</p></section>`;
+        return `<section class="route-map-section"><div class="section-heading"><div><p class="eyebrow">ACTIVE NAVIGATION</p><h3>${label}</h3></div></div>${locationControls}<p class="map-message">The destination address is unavailable.</p></section>`;
     }
     if (/demo only|synthetic|preview/i.test(destination) && !route.stops.some((item) => item.tracking_token?.startsWith("MAP-"))) {
-        return `<section class="route-map-section"><div class="section-heading"><div><p class="eyebrow">ACTIVE NAVIGATION</p><h3>${label}</h3></div></div><p class="map-message">Map navigation is disabled for this route because its address is synthetic.</p></section>`;
+        return `<section class="route-map-section"><div class="section-heading"><div><p class="eyebrow">ACTIVE NAVIGATION</p><h3>${label}</h3></div></div>${locationControls}<p class="map-message">Map navigation is disabled for this route because its address is synthetic.</p></section>`;
     }
     const directions = new URLSearchParams({
         api: "1",
         destination,
         travelmode: "driving"
     });
+    if (liveOrigin) directions.set("origin", liveOrigin);
     const apiKey = state.settings.googleMapsEmbedKey?.trim();
     const embed = new URLSearchParams({ key: apiKey || "", q: destination });
+    if (state.locationMode === "demo" && state.demoLocation && stop) {
+        const progress = Math.round((state.demoProgress || 0) * 100);
+        const markerX = 28 + progress * 2.44;
+        return `<section class="route-map-section">
+            <div class="section-heading"><div><p class="eyebrow">DEMO GPS PREVIEW</p><h3>Moving toward ${escapeHTML(stop.recipient)}</h3></div><strong>${progress}%</strong></div>
+            ${locationControls}
+            <svg class="demo-route-preview" viewBox="0 0 300 116" role="img" aria-label="Demo-only straight-line preview from pickup to the next delivery stop">
+                <path d="M28 58H272" fill="none" stroke="#bfd0e3" stroke-width="8" stroke-linecap="round"></path>
+                <circle cx="28" cy="58" r="13" fill="#2457a6"></circle>
+                <circle cx="272" cy="58" r="13" fill="#086b4a"></circle>
+                <circle cx="${markerX}" cy="58" r="9" fill="#e69a10" stroke="#fff" stroke-width="3"></circle>
+                <text x="28" y="98" text-anchor="middle">Pickup</text>
+                <text x="272" y="98" text-anchor="middle">Delivery</text>
+            </svg>
+            <p class="demo-gps-warning" role="status"><strong>Simulation only</strong> · local visual preview; no simulated location or delivery event is sent to the Gateway.</p>
+            <p class="map-message">Preview coordinates: ${state.demoLocation.latitude.toFixed(5)}, ${state.demoLocation.longitude.toFixed(5)}</p>
+        </section>`;
+    }
     return `<section class="route-map-section">
         <div class="section-heading"><div><p class="eyebrow">ACTIVE NAVIGATION</p><h3>${label}</h3></div>
             <a class="text-button" href="https://www.google.com/maps/dir/?${escapeHTML(directions.toString())}" target="_blank" rel="noopener noreferrer">Get directions <span>↗</span></a>
         </div>
+        ${locationControls}
         ${apiKey
             ? `<iframe class="route-map-frame" title="Map to ${label}" src="https://www.google.com/maps/embed/v1/place?${escapeHTML(embed.toString())}" loading="lazy" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>`
             : `<p class="map-message">Map preview requires a Google Maps Embed API key. Use Get directions to open navigation for this ${isPickup ? "depot" : "customer"} stop.</p>`}

@@ -6,12 +6,22 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import or_, select
+from geoalchemy2 import Geometry
+from sqlalchemy import cast, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
 
-from db_models.models import Driver, DriverStatus, Route, RouteStatus, RouteStop, User, Vehicle
+from db_models.models import (
+    Driver,
+    DriverStatus,
+    Route,
+    RouteStatus,
+    RouteStop,
+    User,
+    Vehicle,
+    Warehouse,
+)
 
 
 def vehicle_payload(vehicle: Optional[Vehicle]) -> Optional[dict]:
@@ -37,8 +47,11 @@ def profile_payload(user: User) -> dict:
     }
 
 
-def route_payload(route: Route) -> dict:
+def route_payload(route: Route, locations: Optional[dict] = None) -> dict:
     stops = sorted(route.stops, key=lambda stop: stop.sequence)
+    route_locations = locations or {}
+    pickup_location = route_locations.get("pickup", {})
+    stop_locations = route_locations.get("stops", {})
     return {
         "route_id": route.id,
         "status": route.status.value,
@@ -49,6 +62,8 @@ def route_payload(route: Route) -> dict:
         "pickup_name": route.warehouse.name,
         "pickup_address": route.warehouse.address,
         "pickup_code": route.warehouse.code,
+        "pickup_latitude": pickup_location.get("latitude"),
+        "pickup_longitude": pickup_location.get("longitude"),
         "vehicle_id": route.vehicle_id,
         "vehicle_registration": route.vehicle.registration_number,
         "stops": [
@@ -73,10 +88,55 @@ def route_payload(route: Route) -> dict:
                     else None
                 ),
                 "planned_arrival_at": stop.planned_arrival_at.isoformat(),
+                "latitude": stop_locations.get(stop.id, {}).get("latitude"),
+                "longitude": stop_locations.get(stop.id, {}).get("longitude"),
             }
             for stop in stops
         ],
     }
+
+
+async def route_location_payload(db: AsyncSession, route_ids: list[uuid.UUID]) -> dict:
+    if not route_ids:
+        return {}
+
+    point_type = Geometry(geometry_type="POINT", srid=4326)
+    warehouse_point = cast(Warehouse.location, point_type)
+    warehouse_result = await db.execute(
+        select(
+            Route.id,
+            func.ST_Y(warehouse_point).label("latitude"),
+            func.ST_X(warehouse_point).label("longitude"),
+        )
+        .join(Warehouse, Route.warehouse_id == Warehouse.id)
+        .where(Route.id.in_(route_ids))
+    )
+    locations = {
+        route_id: {
+            "pickup": {
+                "latitude": float(latitude),
+                "longitude": float(longitude),
+            },
+            "stops": {},
+        }
+        for route_id, latitude, longitude in warehouse_result.all()
+    }
+
+    stop_point = cast(RouteStop.planned_location, point_type)
+    stop_result = await db.execute(
+        select(
+            RouteStop.route_id,
+            RouteStop.id,
+            func.ST_Y(stop_point).label("latitude"),
+            func.ST_X(stop_point).label("longitude"),
+        ).where(RouteStop.route_id.in_(route_ids))
+    )
+    for route_id, stop_id, latitude, longitude in stop_result.all():
+        locations.setdefault(route_id, {"pickup": {}, "stops": {}})["stops"][stop_id] = {
+            "latitude": float(latitude),
+            "longitude": float(longitude),
+        }
+    return locations
 
 
 def route_load_options():

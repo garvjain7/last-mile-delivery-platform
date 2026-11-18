@@ -38,6 +38,7 @@ ENV/
 .idea/
 *.swp
 *.swo
+node_modules/
 
 # Docker / Storage
 minio_data/
