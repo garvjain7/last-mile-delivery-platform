@@ -3,7 +3,7 @@
 
 import os
 from dotenv import load_dotenv
-from pydantic import BaseModel
+from pydantic import BaseModel, SecretStr
 
 load_dotenv()
 
@@ -17,6 +17,9 @@ class CoreAPIConfig(BaseModel):
 
     # --- Database ---
     database_url: str = os.getenv("DATABASE_URL", "")
+    payment_method_encryption_key: SecretStr = SecretStr(
+        os.getenv("PAYMENT_METHOD_ENCRYPTION_KEY", "")
+    )
 
     # --- Driver Gateway ---
     driver_gateway_url: str = os.getenv(

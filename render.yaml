@@ -16,6 +16,8 @@ services:
         value: production
       - key: JWT_SECRET_KEY
         sync: false
+      - key: PAYMENT_METHOD_ENCRYPTION_KEY
+        sync: false
       - key: COOKIE_SECURE
         value: "true"
       - key: DRIVER_APP_ORIGINS

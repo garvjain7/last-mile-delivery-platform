@@ -1,9 +1,12 @@
 """Request and response schemas for driver self-service endpoints."""
 
+import re
+from datetime import datetime
+from decimal import Decimal
 from typing import Literal, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, SecretStr, field_validator, model_validator
 
 
 class DriverProfilePatch(BaseModel):
@@ -66,6 +69,7 @@ class RouteStopResponse(BaseModel):
     recipient_phone: str
     delivery_address: str
     tracking_token: str
+    planned_distance_m: Optional[int] = None
     window_earliest: Optional[str]
     window_latest: Optional[str]
     planned_arrival_at: str
@@ -112,4 +116,96 @@ class DriverScanValidationRequest(BaseModel):
     def require_order_for_stop_scan(self):
         if self.scan_stage == "stop" and self.order_id is None:
             raise ValueError("order_id is required for a stop scan.")
+        return self
+
+
+class PaymentMethodCreate(BaseModel):
+    method_type: Literal["upi", "bank_account"]
+    upi_id: Optional[SecretStr] = None
+    account_holder_name: Optional[SecretStr] = None
+    account_number: Optional[SecretStr] = None
+    ifsc_code: Optional[SecretStr] = None
+    is_preferred: bool = False
+
+    @model_validator(mode="after")
+    def validate_method_details(self):
+        if self.method_type == "upi":
+            if self.account_holder_name or self.account_number or self.ifsc_code:
+                raise ValueError("UPI methods must not include bank account fields.")
+            if self.upi_id is None:
+                raise ValueError("upi_id is required for a UPI method.")
+            upi_id = self.upi_id.get_secret_value().strip()
+            if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{1,255}@[A-Za-z0-9.-]{2,64}", upi_id):
+                raise ValueError("upi_id is not a valid UPI handle.")
+            self.upi_id = SecretStr(upi_id)
+            return self
+
+        if self.upi_id:
+            raise ValueError("Bank account methods must not include a UPI handle.")
+        if not all((self.account_holder_name, self.account_number, self.ifsc_code)):
+            raise ValueError("Bank account methods require holder name, account number, and IFSC.")
+        holder_name = self.account_holder_name.get_secret_value().strip()
+        account_number = self.account_number.get_secret_value().strip()
+        ifsc_code = self.ifsc_code.get_secret_value().strip().upper()
+        if not holder_name or len(holder_name) > 200:
+            raise ValueError("account_holder_name must contain 1 to 200 characters.")
+        if not re.fullmatch(r"[0-9]{6,18}", account_number):
+            raise ValueError("account_number must contain 6 to 18 digits.")
+        if not re.fullmatch(r"[A-Z]{4}0[A-Z0-9]{6}", ifsc_code):
+            raise ValueError("ifsc_code is not a valid IFSC code.")
+        self.account_holder_name = SecretStr(holder_name)
+        self.account_number = SecretStr(account_number)
+        self.ifsc_code = SecretStr(ifsc_code)
+        return self
+
+
+class PaymentMethodResponse(BaseModel):
+    method_id: UUID
+    method_type: Literal["upi", "bank_account"]
+    masked_details: str
+    is_preferred: bool
+    created_at: datetime
+
+
+class DriverEarningTransactionResponse(BaseModel):
+    transaction_id: UUID
+    entry_type: str
+    amount: Decimal
+    currency: Literal["INR"]
+    description: str
+    order_id: Optional[UUID]
+    created_at: datetime
+
+
+class DriverEarningsResponse(BaseModel):
+    currency: Literal["INR"]
+    available_balance: Decimal
+    base_pay: Decimal
+    tips: Decimal
+    bonuses: Decimal
+    adjustments: Decimal
+    total_earned: Decimal
+    recent_transactions: list[DriverEarningTransactionResponse]
+
+
+class DriverEarningsAdjustmentRequest(BaseModel):
+    driver_id: UUID
+    entry_type: Literal["tip", "bonus", "adjustment"]
+    amount: Decimal = Field(max_digits=12, decimal_places=2)
+    idempotency_key: UUID
+    reason: str = Field(min_length=1, max_length=300)
+
+    @field_validator("reason")
+    @classmethod
+    def normalize_reason(cls, value: str) -> str:
+        return value.strip()
+
+    @model_validator(mode="after")
+    def validate_adjustment(self):
+        if not self.reason:
+            raise ValueError("reason cannot be blank.")
+        if self.amount == 0:
+            raise ValueError("amount cannot be zero.")
+        if self.entry_type in {"tip", "bonus"} and self.amount < 0:
+            raise ValueError("tips and bonuses must be positive.")
         return self

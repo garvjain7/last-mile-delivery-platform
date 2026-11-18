@@ -11,8 +11,14 @@ export function todayView() {
         ? Math.round(((completedStops + failedStops) / totalStops) * 100)
         : 0;
     const availableRoutes = state.driverRoutes.filter((route) => route.status === "planned");
-    const driverStatus = state.identity?.driver_status || "unavailable";
-    const isOnline = ["available", "on_route"].includes(driverStatus);
+    const earningsPreview = state.earnings
+        ? new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR" })
+            .format(Number(state.earnings.available_balance))
+        : state.earningsError ? "Earnings unavailable" : "Loading earnings…";
+    const earningsDetail = state.earnings
+        ? `${Number(state.earnings.total_earned).toFixed(2)} INR total earned`
+        : state.earningsError ? escapeHTML(state.earningsError) : "Balance and transactions";
+    const driverStatus = state.identity?.driver_status;
     const pendingPickupCount = state.route && !state.pickedUp
         ? Math.max(0, state.route.stops.length - state.pickupScanned.size)
         : 0;
@@ -30,25 +36,20 @@ export function todayView() {
                     : ""}
             </div>
         </section>
-        <section class="availability-panel" aria-label="Driver availability">
-            <div><p class="eyebrow">AVAILABILITY</p><strong>${isOnline ? "Online" : "Offline"}</strong>
-                <small>Availability is managed by your fleet team.</small></div>
-            <button class="availability-switch" type="button" role="switch" aria-checked="${isOnline}" disabled aria-label="Driver availability is managed by staff">
-                <span></span>
-            </button>
-        </section>
-        <section class="task-overview" aria-label="Active tasks and pending pickups">
-            <article><span>Active tasks</span><strong>${state.route ? openStops : 0}</strong><small>${state.route ? "stops remaining" : "No active route"}</small></article>
-            <article><span>Pending pickups</span><strong>${pendingPickupCount}</strong><small>${state.route && !state.pickedUp ? "packages to scan at depot" : "No depot pickup pending"}</small></article>
+        <section class="driver-status-banner" aria-label="Fleet-managed driver status">
+            <span class="driver-status-indicator" aria-hidden="true"></span>
+            <div><p class="eyebrow">FLEET STATUS</p><strong>${escapeHTML(driverStatus ? driverStatus.replaceAll("_", " ") : "Status unavailable")}</strong>
+                <small>This status is managed by your fleet team.</small></div>
+            ${state.route && !state.pickedUp ? `<span class="pickup-pending-count">${pendingPickupCount} pickup scans left</span>` : ""}
         </section>
         <section class="daily-metrics-panel" aria-label="Daily performance metrics">
-            <div class="section-heading"><div><p class="eyebrow">PERFORMANCE</p><h3>Today</h3></div></div>
+            <div class="section-heading"><div><p class="eyebrow">ACTIVE ROUTE</p><h3>Stop progress</h3></div></div>
             <div class="daily-metrics-grid">
-                <div><strong>${state.route ? completedStops : "—"}</strong><span>Stops completed</span></div>
-                <div><strong>—</strong><span>Hours active</span></div>
-                <div><strong>—</strong><span>Acceptance rate</span></div>
+                <div><strong>${state.route ? completedStops : "—"}</strong><span>Delivered</span></div>
+                <div><strong>${state.route ? totalStops : "—"}</strong><span>Total stops</span></div>
+                <div><strong>${state.route ? failedStops : "—"}</strong><span>Failed</span></div>
             </div>
-            <p>Only stop totals are available from the active route.</p>
+            <p>${state.route ? "Counts reflect only the active route." : "Route progress appears here when an assigned route is active."}</p>
         </section>
         ${state.route ? `<section class="daily-progress" aria-label="Today's delivery progress">
             <div class="daily-progress-heading"><div><p class="eyebrow">TODAY'S ROUTE</p><h2>Delivery progress</h2></div><strong>${progressPercent}%</strong></div>
@@ -68,7 +69,7 @@ export function todayView() {
         </section>` : ""}
         ${state.route ? `<div class="section-heading"><div><p class="eyebrow">PICK UP WHERE YOU LEFT OFF</p><h3>Active route</h3></div><button class="text-button" data-tab="Route">Open route <span>→</span></button></div>
             ${routeSummary(state.route, "Continue")}
-            <div class="home-quick-actions"><button data-action="start-location"><span>⌖</span><strong>Share location</strong><small>GPS check-in</small></button><button data-action="sync"><span>↻</span><strong>Sync activity</strong><small>${state.outboxCount} waiting</small></button><button data-action="logout-driver-app"><span>↩</span><strong>Log out</strong><small>Return to central sign in</small></button></div>
+            <div class="home-quick-actions"><button data-action="start-location"><span aria-hidden="true">⌖</span><strong>Share location</strong><small>GPS check-in</small></button><button data-action="sync"><span aria-hidden="true">↻</span><strong>Sync activity</strong><small>${state.outboxCount} waiting</small></button></div>
         ` : `
             <div class="section-heading"><div><p class="eyebrow">YOUR ASSIGNED WORK</p><h3>Planned routes</h3></div><span class="count-pill">${availableRoutes.length} assigned</span></div>
             ${availableRoutes.length
@@ -79,7 +80,7 @@ export function todayView() {
             <span class="location-icon">⌖</span><div><strong>Location services</strong><small>${escapeHTML(state.locationStatus)}</small></div><button class="text-button" data-action="start-location">${state.locationMode === "live" ? "Pause" : "Enable"} <span>→</span></button>
         </section>
         <section class="home-earnings-preview">
-            <div><p class="eyebrow">EARNINGS PREVIEW</p><strong>Payout data unavailable</strong><small>${completedStops} delivered ${completedStops === 1 ? "stop" : "stops"} · amount not provided</small></div>
+            <div><p class="eyebrow">AVAILABLE BALANCE</p><strong>${escapeHTML(earningsPreview)}</strong><small>${escapeHTML(earningsDetail)}</small></div>
             <button class="text-button" data-tab="Earnings">Details <span>→</span></button>
         </section>`;
 }

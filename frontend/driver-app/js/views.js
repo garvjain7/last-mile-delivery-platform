@@ -48,10 +48,10 @@ export function render() {
     const stickyRouteAction = state.tab === "Route" ? routeStickyAction() : "";
     const emergencyAction = state.tab === "Route" ? sosButton() : "";
     appRoot.innerHTML = `${topbar()}${offlineBanner}<main class="main-content ${stickyRouteAction ? "has-sticky-action" : ""}">${tabContent()}</main>${stickyRouteAction}${emergencyAction}
-        <nav class="bottom-nav" aria-label="Main navigation">${tabs.map((tab) => `
-            <button class="nav-item ${state.tab === tab.id || (tab.id === "Routes" && state.tab === "Route") ? "is-active" : ""}" data-tab="${tab.id}" ${state.tab === tab.id || (tab.id === "Routes" && state.tab === "Route") ? 'aria-current="page"' : ""}>
-                <span class="nav-icon">${tab.icon}</span><span>${tab.label}</span>
-                ${tab.id === "Profile" && state.outboxCount ? `<i class="nav-badge"></i>` : ""}
+        <nav class="bottom-nav" aria-label="Primary navigation">${tabs.map((tab) => `
+            <button class="nav-item ${state.tab === tab.id || (tab.id === "Routes" && state.tab === "Route") ? "is-active" : ""}" data-tab="${tab.id}" aria-label="${tab.label}" ${state.tab === tab.id || (tab.id === "Routes" && state.tab === "Route") ? 'aria-current="page"' : ""}>
+                <span class="nav-icon" aria-hidden="true">${tab.icon}</span><span>${tab.label}</span>
+                ${tab.id === "Profile" && state.outboxCount ? `<i class="nav-badge" aria-label="${state.outboxCount} queued items"></i>` : ""}
             </button>`).join("")}
         </nav>`;
     if (state.tab === "Activity") loadActivity();

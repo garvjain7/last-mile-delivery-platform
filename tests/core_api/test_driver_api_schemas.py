@@ -1,17 +1,28 @@
 import asyncio
 from datetime import datetime, timezone
+import json
 from types import SimpleNamespace
 from uuid import uuid4
 
+from cryptography.fernet import Fernet
+from pydantic import SecretStr
 import pytest
 from pydantic import ValidationError
 from sqlalchemy.dialects import postgresql
 
+from db_models.models import DriverPaymentMethodType
+from services.core_api.app.config import config
+from services.core_api.app.driver.finance import (
+    mask_payment_method,
+    payment_cipher,
+    payment_method_details,
+)
 from services.core_api.app.driver.schemas import (
     AssignVehicleRequest,
     DriverProfilePatch,
     DriverRouteResponse,
     DriverScanValidationRequest,
+    PaymentMethodCreate,
     RouteStopResponse,
 )
 from services.core_api.app.driver.service import route_location_payload, route_payload
@@ -53,6 +64,47 @@ def test_scan_validation_requires_order_for_delivery_stop_scan():
 
     assert payload.scan_stage == "pickup"
     assert payload.order_id is None
+
+
+def test_payment_method_validation_masks_and_encrypts_payout_details(monkeypatch):
+    payload = PaymentMethodCreate(
+        method_type="bank_account",
+        account_holder_name="  A Driver ",
+        account_number="001234567890",
+        ifsc_code="abcd0123456",
+    )
+    details = payment_method_details(payload)
+    monkeypatch.setattr(
+        config,
+        "payment_method_encryption_key",
+        SecretStr(Fernet.generate_key().decode("ascii")),
+    )
+    encrypted = payment_cipher().encrypt(
+        json.dumps(details, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
+    )
+
+    assert details == {
+        "account_holder_name": "A Driver",
+        "account_number": "001234567890",
+        "ifsc_code": "ABCD0123456",
+    }
+    assert mask_payment_method(DriverPaymentMethodType.bank_account, details) == "Account ending 7890"
+    assert b"001234567890" not in encrypted
+    assert json.loads(payment_cipher().decrypt(encrypted)) == details
+
+
+def test_payment_method_validation_rejects_mismatched_or_invalid_details():
+    with pytest.raises(ValidationError):
+        PaymentMethodCreate(method_type="upi", upi_id="not-a-handle")
+    with pytest.raises(ValidationError):
+        PaymentMethodCreate(
+            method_type="bank_account",
+            account_holder_name="Driver",
+            account_number="12AB",
+            ifsc_code="ABCD0123456",
+        )
+    with pytest.raises(ValidationError):
+        PaymentMethodCreate(method_type="upi", upi_id="driver@bank", account_number="123456")
 
 
 def test_route_payload_orders_stops_and_uses_schema_fields():

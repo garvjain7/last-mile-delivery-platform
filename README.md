@@ -79,11 +79,18 @@ Open `.env` and fill in your team secrets:
 DATABASE_URL=postgresql+asyncpg://<user>:<password>@ep-xyz.us-east-2.aws.neon.tech/neondb?ssl=require
 REDIS_URL=rediss://default:<password>@red-xyz.oregon-redis.render.com:6379
 JWT_SECRET_KEY=your_shared_team_jwt_secret_key_123
+PAYMENT_METHOD_ENCRYPTION_KEY=<generated Fernet key>
 ```
 
 Use the URL as provided by Neon with the `postgresql+asyncpg` scheme and
 `ssl=require`. To report safe connection and query timings without printing credentials, run
 `python scripts/verify_database_connection.py` after setting `DATABASE_URL`.
+
+Generate `PAYMENT_METHOD_ENCRYPTION_KEY` locally with
+`python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`.
+Keep the key out of source control and use the same configured key across service restarts;
+changing it without re-encrypting stored payout methods makes those details unrecoverable.
+On Render, set the secret in the Core API service environment.
 
 ### Step 2: One-Click Environment Setup (Run Once)
 
@@ -110,6 +117,13 @@ Verify installation:
 python -c "import fastapi, uvicorn, sqlalchemy, asyncpg, redis, httpx, minio, pydantic, honcho; print('ALL DEPENDENCIES LOADED!')"
 ```
 
+### Driver earnings database setup
+
+For a new database, apply `schema.sql`. For an existing database, apply
+`db/migrations/2026_11_18_01_driver_payments_earnings.sql` once before deploying
+the updated services. Migrations are not run automatically at startup. Configure
+`PAYMENT_METHOD_ENCRYPTION_KEY` before drivers save payout methods.
+
 ### Step 4: Run All Services Locally
 
 Instead of opening 5 separate terminal windows, you can boot the entire platform with one command using the included `honcho` process manager. 
@@ -130,7 +144,7 @@ Use this only with a development/demo Neon database. In the Neon SQL Editor, run
 
 The showcase sign-in is `john.doe.driver@showcase.test` / `DriverDemo123!`. Sign in through the central app, open the Driver app, and accept the planned route. The scanner shows **Fill barcode from route** when the selected parcel has a tracking token; selecting it fills the manifest token, and **Verify parcel** still follows the normal route-validation flow. Showcase addresses are marked demo-only so they are not used for real navigation.
 
-These are demo records, not operational data. Seeded scan history does not pre-mark parcels as scanned in the browser, and message/exception/earnings history is not currently loaded by the Driver app. Do not seed `offline_event_outbox`: it is a processing queue, not demo history. Never use the showcase credentials or sample records in production.
+These are demo records, not operational data. Seeded scan history does not pre-mark parcels as scanned in the browser; message and exception history is not currently loaded by the Driver app. The demo earnings rows appear as sample ledger adjustments. Do not seed `offline_event_outbox`: it is a processing queue, not demo history. Never use the showcase credentials or sample records in production.
 
 ---
 

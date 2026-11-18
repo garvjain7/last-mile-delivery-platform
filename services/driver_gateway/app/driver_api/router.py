@@ -39,6 +39,9 @@ _DRIVER_ENDPOINTS = {
     ("GET", "vehicles"),
     ("PUT", "vehicle"),
     ("GET", "routes"),
+    ("GET", "earnings"),
+    ("GET", "payment-methods"),
+    ("POST", "payment-methods"),
 }
 
 
@@ -75,6 +78,12 @@ async def _forward_to_core_api(
             and route_parts[2] == "stops"
             and route_parts[4] == "pod-authorize"
         )
+        is_preferred_payment_method = (
+            request.method == "PUT"
+            and len(route_parts) == 3
+            and route_parts[0] == "payment-methods"
+            and route_parts[2] == "preferred"
+        )
         if is_accept_route or is_scan_route:
             try:
                 UUID(route_parts[1])
@@ -87,11 +96,17 @@ async def _forward_to_core_api(
                 UUID(route_parts[3])
             except ValueError:
                 is_pod_authorize_route = False
+        if is_preferred_payment_method:
+            try:
+                UUID(route_parts[1])
+            except ValueError:
+                is_preferred_payment_method = False
         is_allowed = (
             (request.method, path) in _DRIVER_ENDPOINTS
             or is_accept_route
             or is_scan_route
             or is_pod_authorize_route
+            or is_preferred_payment_method
         )
     if not is_allowed:
         raise HTTPException(status_code=404, detail="Driver API endpoint not found.")

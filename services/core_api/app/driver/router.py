@@ -33,8 +33,10 @@ from services.core_api.app.driver.service import (
     route_location_payload,
     update_driver_profile,
 )
+from services.core_api.app.driver.finance import router as finance_router
 
 router = APIRouter()
+router.include_router(finance_router)
 
 
 @router.get("/profile", response_model=DriverProfileResponse)

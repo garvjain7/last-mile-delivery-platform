@@ -60,7 +60,7 @@ async def test_republish_stale_placed_order_preserves_status_and_marks_retry(mon
     order = SimpleNamespace(
         id=uuid4(),
         merchant_id=uuid4(),
-        warehouse_id=None,
+        warehouse_id=uuid4(),
         status=OrderStatus.placed,
         created_at=now - timedelta(days=2),
         updated_at=now - timedelta(days=2),
@@ -86,7 +86,7 @@ async def test_republish_stale_placed_order_preserves_status_and_marks_retry(mon
     assert stream_name == "orders_stream"
     assert payload["order_id"] == str(order.id)
     assert payload["dropoff_location"] == "POINT(77.5 12.9)"
-    assert payload["warehouse_id"] is None
+    assert payload["warehouse_id"] == str(order.warehouse_id)
     assert payload["time_window"] == ""
     assert order.status is OrderStatus.placed
     assert order.updated_at > now - timedelta(minutes=1)
@@ -99,6 +99,7 @@ async def test_republish_rejects_recently_updated_order(monkeypatch):
     now = datetime.now(timezone.utc)
     order = SimpleNamespace(
         id=uuid4(),
+        warehouse_id=uuid4(),
         status=OrderStatus.placed,
         created_at=now - timedelta(days=2),
         updated_at=now,
@@ -125,7 +126,7 @@ async def test_republish_rolls_back_when_redis_publish_fails(monkeypatch):
     order = SimpleNamespace(
         id=uuid4(),
         merchant_id=uuid4(),
-        warehouse_id=None,
+        warehouse_id=uuid4(),
         status=OrderStatus.placed,
         created_at=now - timedelta(days=2),
         updated_at=now - timedelta(days=2),
@@ -151,3 +152,27 @@ async def test_republish_rolls_back_when_redis_publish_fails(monkeypatch):
     db.rollback.assert_awaited_once()
     db.commit.assert_not_awaited()
     assert order.updated_at == now - timedelta(days=2)
+
+
+@pytest.mark.asyncio
+async def test_republish_rejects_order_without_warehouse(monkeypatch):
+    order = SimpleNamespace(
+        id=uuid4(),
+        warehouse_id=None,
+        status=OrderStatus.placed,
+        created_at=datetime.now(timezone.utc) - timedelta(days=2),
+        updated_at=datetime.now(timezone.utc) - timedelta(days=2),
+    )
+    db = SimpleNamespace(
+        execute=AsyncMock(return_value=QueryResult((order, "POINT(77.5 12.9)"))),
+        commit=AsyncMock(),
+        rollback=AsyncMock(),
+    )
+    publish = AsyncMock()
+    monkeypatch.setattr(service, "add_to_stream", publish)
+
+    with pytest.raises(service.OrderNotEligibleError, match="warehouse"):
+        await service.republish_stale_placed_order(db, order.id)
+
+    publish.assert_not_awaited()
+    db.commit.assert_not_awaited()

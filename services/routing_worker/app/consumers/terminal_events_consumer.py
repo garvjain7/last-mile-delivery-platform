@@ -6,9 +6,10 @@ import socket
 from datetime import datetime, timezone
 from uuid import uuid4
 
+from geoalchemy2 import Geometry
 from pydantic import ValidationError
 from redis.exceptions import ResponseError
-from sqlalchemy import func, select
+from sqlalchemy import cast, func, select
 
 from db_models.models import (
     Driver,
@@ -21,9 +22,12 @@ from db_models.models import (
     RouteStatus,
     RouteStop,
     StopStatus,
+    Warehouse,
 )
 from services.routing_worker.app.database.connection import async_session_factory, engine
-from streaming.client import close_redis_client, get_redis_client
+from services.routing_worker.app.earnings import post_delivery_earnings
+from services.routing_worker.app.engines.osrm import OSRMClient
+from streaming.client import close_redis_client, decode_stream_fields, get_redis_client
 from streaming.schemas.events import (
     DriverPackageScannedEvent,
     DriverPickupConfirmedEvent,
@@ -41,6 +45,52 @@ CLAIM_IDLE_MS = 60_000
 
 class InvalidDriverEvent(Exception):
     """A permanently invalid or unauthorized event that should not be retried."""
+
+
+async def _ensure_planned_distance(session, stop: RouteStop, route: Route) -> int:
+    if stop.planned_distance_m is not None:
+        return stop.planned_distance_m
+    point_type = Geometry(geometry_type="POINT", srid=4326)
+    target = await session.execute(
+        select(
+            func.ST_X(cast(RouteStop.planned_location, point_type)),
+            func.ST_Y(cast(RouteStop.planned_location, point_type)),
+        ).where(RouteStop.id == stop.id)
+    )
+    target_row = target.one_or_none()
+    if target_row is None:
+        raise RuntimeError(f"Could not load planned destination for route stop {stop.id}.")
+    previous = await session.execute(
+        select(
+            func.ST_X(cast(RouteStop.planned_location, point_type)),
+            func.ST_Y(cast(RouteStop.planned_location, point_type)),
+        )
+        .where(
+            RouteStop.route_id == route.id,
+            RouteStop.sequence < stop.sequence,
+        )
+        .order_by(RouteStop.sequence.desc())
+        .limit(1)
+    )
+    previous_row = previous.one_or_none()
+    if previous_row is None:
+        origin = await session.execute(
+            select(
+                func.ST_X(cast(Warehouse.location, point_type)),
+                func.ST_Y(cast(Warehouse.location, point_type)),
+            )
+            .join(Route, Route.warehouse_id == Warehouse.id)
+            .where(Route.id == route.id)
+        )
+        origin_row = origin.one_or_none()
+    else:
+        origin_row = previous_row
+    if origin_row is None:
+        raise RuntimeError(f"Could not load route origin for route {route.id}.")
+    origin = (float(origin_row[0]), float(origin_row[1]))
+    destination = (float(target_row[0]), float(target_row[1]))
+    stop.planned_distance_m = await OSRMClient().get_route_distance(origin, destination)
+    return stop.planned_distance_m
 
 
 async def apply_terminal_event(session, event: DriverTelemetryEvent) -> None:
@@ -89,6 +139,10 @@ async def apply_terminal_event(session, event: DriverTelemetryEvent) -> None:
     if stop.status != StopStatus.pending:
         raise InvalidDriverEvent("Only pending stops can receive a terminal outcome.")
 
+    planned_distance_m = None
+    if event.event_type == "delivery.completed":
+        planned_distance_m = await _ensure_planned_distance(session, stop, route)
+
     now = datetime.now(timezone.utc)
     stop.status = desired_stop_status
     stop.failure_reason = (
@@ -111,6 +165,18 @@ async def apply_terminal_event(session, event: DriverTelemetryEvent) -> None:
         )
         order.status = desired_order_status
         order.updated_at = now
+    if event.event_type == "delivery.completed":
+        await post_delivery_earnings(
+            session,
+            driver_id=event.driver_id,
+            route_id=route.id,
+            route_stop_id=stop.id,
+            order_id=order.id,
+            source_event_id=event.event_id,
+            weight_kg=order.weight_kg,
+            planned_distance_m=planned_distance_m,
+            actor_user_id=event.driver_id,
+        )
 
     pending_stops = await session.scalar(
         select(func.count())
@@ -169,20 +235,12 @@ async def validate_nonterminal_event(session, fields: dict[str, str]) -> None:
             raise InvalidDriverEvent("Pickup confirmation does not cover the route manifest.")
 
 
-def _decode_fields(fields: dict[str, str]) -> dict[str, str]:
-    return {
-        key.decode() if isinstance(key, bytes) else key:
-        value.decode() if isinstance(value, bytes) else value
-        for key, value in fields.items()
-    }
-
-
 async def _acknowledge(redis_client, message_id: str) -> None:
     await redis_client.xack(STREAM_NAME, GROUP_NAME, message_id)
 
 
 async def _process_message(redis_client, message_id: str, raw_fields: dict[str, str]) -> None:
-    fields = _decode_fields(raw_fields)
+    fields = decode_stream_fields(raw_fields)
     event_type = fields.get("event_type")
     if event_type in {"package.scanned", "pickup.confirmed"}:
         try:
@@ -266,7 +324,7 @@ async def run_terminal_events_consumer() -> None:
                     count=BATCH_SIZE,
                     block=5_000,
                 )
-                for _stream, entries in batches:
+                for _, entries in batches:
                     for message_id, fields in entries:
                         await _process_message(redis_client, message_id, fields)
             except asyncio.CancelledError:

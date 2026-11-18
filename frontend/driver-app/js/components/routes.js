@@ -135,16 +135,25 @@ export function routeMap(route) {
 
 export function routeSummary(route, actionLabel = "View route") {
     const action = route.status === "in_progress" ? "go-route" : "view-route";
+    const firstWindow = route.stops?.[0]?.window;
     return `
         <article class="opportunity-card">
-            <div class="opportunity-top"><span class="route-tag">ASSIGNED ROUTE</span><span class="route-status-dot"></span></div>
-            <div class="opportunity-title"><div><h3>${escapeHTML(route.title)}</h3><p>${escapeHTML(route.area)}</p></div><span class="route-arrow">↗</span></div>
+            <div class="opportunity-top"><span class="route-tag">ASSIGNED ROUTE</span><span class="route-state-label">${escapeHTML(route.status.replaceAll("_", " "))}</span></div>
+            <div class="opportunity-title"><div><h3>${escapeHTML(route.title)}</h3><p>${escapeHTML(route.area)}</p></div><span class="route-arrow" aria-hidden="true">↗</span></div>
             <div class="route-stats">
                 <span><b>${route.stop_count}</b><small>stops</small></span>
                 <span><b>${route.distance_km}</b><small>km</small></span>
                 <span><b>${Math.floor(route.duration_min / 60)}h ${route.duration_min % 60}m</b><small>est. time</small></span>
             </div>
-            <div class="route-card-footer"><span class="pickup-pin">⌖</span> Pickup at <strong>${escapeHTML(route.pickup)}</strong><button class="text-button" data-action="${action}" data-route="${escapeHTML(route.route_id)}">${actionLabel} <span>→</span></button></div>
+            <div class="route-assignment-details">
+                <div><span>VEHICLE</span><strong>${escapeHTML(route.vehicle_registration || "Not assigned")}</strong></div>
+                <div><span>FIRST DELIVERY WINDOW</span><strong>${escapeHTML(firstWindow || "Not available")}</strong></div>
+            </div>
+            <div class="route-card-footer"><span class="pickup-pin" aria-hidden="true">⌖</span><span>Pickup at</span><strong>${escapeHTML(route.pickup)}</strong><button class="button button-primary button-small" data-action="${action}" data-route="${escapeHTML(route.route_id)}">${actionLabel} <span>→</span></button></div>
+            <details class="route-map-disclosure">
+                <summary>Map preview</summary>
+                <div class="route-map-disclosure-content">${routeMap(route)}</div>
+            </details>
         </article>`;
 }
 
@@ -254,16 +263,16 @@ export function routeStickyAction() {
     }
     if (!state.stopScanned.has(nextStop.order_id)) {
         return `<div class="sticky-route-action">
-            <button class="button button-primary button-wide" data-action="scan-stop" data-order="${escapeHTML(nextStop.order_id)}">Stop ${stopNumber} of ${route.stops.length} · Scan package <span>→</span></button>
+            <button class="button button-primary button-wide" data-action="scan-stop" data-order="${escapeHTML(nextStop.order_id)}" aria-label="Scan package for stop ${stopNumber}">Scan package · Stop ${stopNumber} of ${route.stops.length} <span>→</span></button>
         </div>`;
     }
     if (state.arrived.has(nextStop.order_id)) {
         return `<div class="sticky-route-action">
-            <button class="button button-primary button-wide" data-action="open-delivery" data-order="${escapeHTML(nextStop.order_id)}">Stop ${stopNumber} of ${route.stops.length} · Complete delivery <span>→</span></button>
+            <button class="button button-primary button-wide" data-action="open-delivery" data-order="${escapeHTML(nextStop.order_id)}" aria-label="Complete delivery for stop ${stopNumber}">Complete delivery · Stop ${stopNumber} of ${route.stops.length} <span>→</span></button>
         </div>`;
     }
     return `<div class="sticky-route-action">
-        <button class="button button-primary button-wide" data-action="arrive-stop" data-order="${escapeHTML(nextStop.order_id)}">Stop ${stopNumber} of ${route.stops.length} · Tap to arrive <span>→</span></button>
+        <button class="button button-primary button-wide" data-action="arrive-stop" data-order="${escapeHTML(nextStop.order_id)}" aria-label="GPS check in at stop ${stopNumber}">⌖ GPS check-in · Stop ${stopNumber} of ${route.stops.length} <span>→</span></button>
     </div>`;
 }
 
@@ -274,7 +283,7 @@ export function routeOpportunitiesView() {
         ${state.route ? `<section class="active-callout"><span class="callout-icon">✓</span><div><strong>You have an active route</strong><small>Finish or return your current parcels before taking another.</small></div><button class="text-button" data-tab="Route">View <span>→</span></button></section>` : ""}
         <div class="board-meta"><span>ASSIGNED PLANNED ROUTES</span><span>From your account</span></div>
         ${availableRoutes.length
-            ? `<div class="opportunity-list">${availableRoutes.map((route) => routeSummary(route, "Review")).join("")}</div>`
+            ? `<div class="opportunity-list">${availableRoutes.map((route) => routeSummary(route, "Start route")).join("")}</div>`
             : `<div class="empty-state"><span>↗</span><h3>No planned routes yet</h3><p>Routes assigned to your driver profile will appear here.</p></div>`}
         <p class="field-hint">Only routes assigned to your driver account are shown here.</p>`;
 }

@@ -1,6 +1,6 @@
 import { state, escapeHTML } from "../state.js";
 
-const filters = ["All", "Open", "Delivered", "Failed", "Skipped"];
+const filters = ["All", "Pending", "Scanned", "Arrived", "Delivered", "Failed", "Skipped"];
 
 function stopStatus(stop) {
     if (state.completed.has(stop.order_id) || stop.status === "delivered") {
@@ -13,12 +13,12 @@ function stopStatus(stop) {
         return { label: "Skipped", key: "Skipped", className: "is-skipped" };
     }
     if (state.arrived.has(stop.order_id)) {
-        return { label: "Arrived", key: "Open", className: "is-arrived" };
+        return { label: "Arrived", key: "Arrived", className: "is-arrived" };
     }
     if (state.stopScanned.has(stop.order_id)) {
-        return { label: "Scanned", key: "Open", className: "is-scanned" };
+        return { label: "Scanned", key: "Scanned", className: "is-scanned" };
     }
-    return { label: "Pending", key: "Open", className: "is-pending" };
+    return { label: "Pending", key: "Pending", className: "is-pending" };
 }
 
 function deliveryRow(stop, index) {
@@ -41,16 +41,10 @@ export function deliveriesView() {
     const statuses = stops.map((stop) => stopStatus(stop));
     const delivered = statuses.filter((status) => status.key === "Delivered").length;
     const failed = statuses.filter((status) => status.key === "Failed").length;
-    const open = statuses.filter((status) => status.key === "Open").length;
-    const activeFilter = state.deliveriesFilter || "All";
+    const activeFilter = filters.includes(state.deliveriesFilter) ? state.deliveriesFilter : "All";
     const visibleStops = stops.filter((stop) => {
         if (activeFilter === "All") return true;
         return stopStatus(stop).key === activeFilter;
-    });
-    const filterOptions = filters.filter((filter) => {
-        if (filter === "Open") return open > 0 || activeFilter === "Open";
-        if (filter === "Skipped") return statuses.some((status) => status.key === "Skipped") || activeFilter === "Skipped";
-        return true;
     });
     return `
         <section class="page-heading">
@@ -65,29 +59,23 @@ export function deliveriesView() {
                     <div><strong>${stops.length}</strong><span>Total stops</span></div>
                     <div><strong>${delivered}</strong><span>Delivered</span></div>
                     <div><strong>${failed}</strong><span>Failed</span></div>
-                    <div><strong>${open}</strong><span>Open</span></div>
+                    <div><strong>${statuses.filter((status) => status.key === "Pending" || status.key === "Scanned" || status.key === "Arrived").length}</strong><span>Remaining</span></div>
                 </div>
             </section>
-            <div class="delivery-filters" aria-label="Filter deliveries">
-                ${filterOptions.map((filter) => `<button class="delivery-filter ${activeFilter === filter ? "is-active" : ""}" data-delivery-filter="${filter}" aria-pressed="${activeFilter === filter}">${filter}</button>`).join("")}
-            </div>
+            <section class="delivery-manifest" aria-label="Current route delivery manifest">
+                <div class="delivery-filter-heading"><div><p class="eyebrow">CURRENT ROUTE</p><h2>Stop manifest</h2></div><span class="count-pill">${stops.length} stops</span></div>
+                <div class="delivery-filters" role="group" aria-label="Filter route stops">
+                    ${filters.map((filter) => `<button class="delivery-filter ${activeFilter === filter ? "is-active" : ""}" data-delivery-filter="${filter}" aria-pressed="${activeFilter === filter}">${filter}</button>`).join("")}
+                </div>
             <div class="delivery-history-list">
                 ${visibleStops.length
                     ? visibleStops.map((stop) => deliveryRow(stop, stops.indexOf(stop))).join("")
                     : `<div class="empty-state empty-state-small"><span>✓</span><h3>No ${activeFilter.toLowerCase()} deliveries</h3><p>Try another filter to see the route manifest.</p></div>`}
             </div>
+            </section>
         ` : `
             <div class="empty-state delivery-empty"><span>▤</span><h3>No active delivery manifest</h3><p>Assigned route stops will appear here when a route is in progress.</p><button class="button button-primary" data-tab="Routes">View routes <span>→</span></button></div>
         `}
-        <section class="notice notice-warm delivery-history-note">
-            <span>i</span><div><strong>Past delivery history</strong><p>The driver API currently returns planned and in-progress routes only. Historical completed, failed, or returned orders are not available here.</p></div>
-        </section>
-        <section class="trip-ledger" aria-label="Delivery history ledger">
-            <div class="section-heading"><div><p class="eyebrow">TRIP LEDGER</p><h3>Past deliveries</h3></div></div>
-            <div class="trip-ledger-empty"><span aria-hidden="true">▤</span><strong>History is not connected</strong>
-                <p>Trip dates, final statuses, transaction amounts, and historical order timelines are not provided by the driver API.</p></div>
-            <button class="button button-secondary button-wide" type="button" disabled aria-disabled="true">Order timeline · unavailable</button>
-        </section>
-        <button class="profile-link-card" data-tab="Earnings"><span class="activity-summary-icon">₹</span><span><strong>Earnings & payouts</strong><small>Payout data is not connected to the driver API</small></span><b>→</b></button>
+        <button class="profile-link-card" data-tab="Earnings"><span class="activity-summary-icon">₹</span><span><strong>Earnings &amp; wallet</strong><small>View available balance and transactions</small></span><b>→</b></button>
         <button class="profile-link-card" data-tab="Activity"><span class="activity-summary-icon">↻</span><span><strong>Offline activity & sync</strong><small>${state.outboxCount ? `${state.outboxCount} item${state.outboxCount === 1 ? "" : "s"} waiting to sync` : "View pending device activity"}</small></span><b>→</b></button>`;
 }

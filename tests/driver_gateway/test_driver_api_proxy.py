@@ -1,4 +1,5 @@
 import asyncio
+from uuid import uuid4
 
 import httpx
 import pytest
@@ -86,6 +87,80 @@ def test_auth_proxy_does_not_expose_customer_registration(monkeypatch):
 
     with pytest.raises(HTTPException) as error_info:
         asyncio.run(driver_api.proxy_auth("register/customer", request))
+
+    assert error_info.value.status_code == 404
+    assert client.request_args is None
+
+
+@pytest.mark.parametrize(
+    ("method", "path"),
+    [
+        ("GET", "earnings"),
+        ("GET", "payment-methods"),
+        ("POST", "payment-methods"),
+        ("PUT", f"payment-methods/{uuid4()}/preferred"),
+    ],
+)
+def test_driver_finance_routes_are_allowlisted_and_forward_sessions(monkeypatch, method, path):
+    client = FakeCoreAPIClient()
+    monkeypatch.setattr(driver_api, "core_api_client", client)
+
+    async def receive():
+        return {"type": "http.request", "body": b"{}", "more_body": False}
+
+    request = Request(
+        {
+            "type": "http",
+            "http_version": "1.1",
+            "method": method,
+            "scheme": "http",
+            "path": f"/driver/{path}",
+            "raw_path": f"/driver/{path}".encode(),
+            "query_string": b"",
+            "headers": [
+                (b"cookie", b"access_token=driver-session"),
+                (b"content-type", b"application/json"),
+            ],
+            "server": ("testserver", 80),
+            "client": ("testclient", 50000),
+        },
+        receive,
+    )
+
+    response = asyncio.run(driver_api.proxy_driver(path, request))
+
+    assert response.status_code == 200
+    assert client.request_args["url"] == f"http://localhost:8000/driver/{path}"
+    assert client.request_args["headers"]["cookie"] == "access_token=driver-session"
+
+
+def test_driver_finance_proxy_rejects_malformed_payment_method_id(monkeypatch):
+    client = FakeCoreAPIClient()
+    monkeypatch.setattr(driver_api, "core_api_client", client)
+
+    async def receive():
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    request = Request(
+        {
+            "type": "http",
+            "http_version": "1.1",
+            "method": "PUT",
+            "scheme": "http",
+            "path": "/driver/payment-methods/not-a-uuid/preferred",
+            "raw_path": b"/driver/payment-methods/not-a-uuid/preferred",
+            "query_string": b"",
+            "headers": [(b"cookie", b"access_token=driver-session")],
+            "server": ("testserver", 80),
+            "client": ("testclient", 50000),
+        },
+        receive,
+    )
+
+    with pytest.raises(HTTPException) as error_info:
+        asyncio.run(
+            driver_api.proxy_driver("payment-methods/not-a-uuid/preferred", request)
+        )
 
     assert error_info.value.status_code == 404
     assert client.request_args is None

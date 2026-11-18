@@ -1,18 +1,19 @@
 # Hard definitions of order_stream, route_stream, driver_stream
 # Strict Pydantic event envelope definitions per Redis Stream.
 
+import json
 from datetime import datetime
 from typing import Any, Dict, List, Literal, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 class OrderCreatedEvent(BaseModel):
     """Event envelope for a newly placed order before warehouse handoff."""
     event_id: str
     order_id: str
     merchant_id: str
-    warehouse_id: Optional[str] = None
+    warehouse_id: str
     dropoff_location: str
     dropoff_raw_address: str
     time_window: str
@@ -30,6 +31,16 @@ class RoutePublishedEvent(BaseModel):
     vehicle_registration: str
     stops: List[Dict[str, Any]]
     created_at: str
+
+    @field_validator("stops", mode="before")
+    @classmethod
+    def decode_stops(cls, value):
+        if isinstance(value, str):
+            try:
+                return json.loads(value)
+            except json.JSONDecodeError as exc:
+                raise ValueError("stops must be valid JSON when read from Redis.") from exc
+        return value
 
 class DriverTelemetryEvent(BaseModel):
     """Validated driver telemetry and terminal-event envelope for driver_events_stream."""

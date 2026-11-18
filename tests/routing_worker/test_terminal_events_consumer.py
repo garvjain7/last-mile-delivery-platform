@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from decimal import Decimal
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -56,7 +57,7 @@ def terminal_event(event_type="delivery.completed", **fields):
     )
 
 
-def test_delivery_completion_updates_stop_order_history_and_finishes_route():
+def test_delivery_completion_updates_ledger_and_finishes_route(monkeypatch):
     driver_id = uuid4()
     route_id = uuid4()
     route = SimpleNamespace(id=route_id, status=RouteStatus.in_progress, completed_at=None, updated_at=None)
@@ -67,20 +68,29 @@ def test_delivery_completion_updates_stop_order_history_and_finishes_route():
         completed_at=None,
         updated_at=None,
         arrived_at=None,
+        planned_distance_m=4200,
     )
     order = SimpleNamespace(
         id=uuid4(),
         status=OrderStatus.out_for_delivery,
         updated_at=None,
+        weight_kg=Decimal("2.50"),
     )
     driver = SimpleNamespace(status=DriverStatus.on_route, updated_at=None)
     session = FakeSession((stop, route, order), [0, driver])
+    earnings_calls = []
+
+    async def record_earnings(*args, **kwargs):
+        earnings_calls.append((args, kwargs))
+
+    monkeypatch.setattr(
+        "services.routing_worker.app.consumers.terminal_events_consumer.post_delivery_earnings",
+        record_earnings,
+    )
+    event = terminal_event(driver_id=driver_id, order_id=order.id, route_id=route_id)
 
     asyncio.run(
-        apply_terminal_event(
-            session,
-            terminal_event(driver_id=driver_id, order_id=order.id, route_id=route_id),
-        )
+        apply_terminal_event(session, event)
     )
 
     assert stop.status == StopStatus.delivered
@@ -90,6 +100,21 @@ def test_delivery_completion_updates_stop_order_history_and_finishes_route():
     assert session.added[0].to_status == OrderStatus.delivered
     assert route.status == RouteStatus.completed
     assert driver.status == DriverStatus.available
+    assert earnings_calls == [
+        (
+            (session,),
+            {
+                "driver_id": driver_id,
+                "route_id": route_id,
+                "route_stop_id": stop.id,
+                "order_id": order.id,
+                "source_event_id": event.event_id,
+                "weight_kg": Decimal("2.50"),
+                "planned_distance_m": 4200,
+                "actor_user_id": driver_id,
+            },
+        )
+    ]
 
 
 def test_failed_delivery_can_mark_existing_order_status_returned():

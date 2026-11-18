@@ -102,6 +102,8 @@ async def republish_stale_placed_order(
         raise OrderNotFoundError("Order not found.")
 
     order, dropoff_location = row
+    if order.warehouse_id is None:
+        raise OrderNotEligibleError("Order has no assigned warehouse and cannot be re-published.")
     if (
         order.status != OrderStatus.placed
         or order.created_at > stale_cutoff
@@ -121,7 +123,7 @@ async def republish_stale_placed_order(
         event_id=str(uuid.uuid4()),
         order_id=str(order.id),
         merchant_id=str(order.merchant_id),
-        warehouse_id=str(order.warehouse_id) if order.warehouse_id else None,
+        warehouse_id=str(order.warehouse_id),
         dropoff_location=dropoff_location,
         dropoff_raw_address=order.delivery_address,
         time_window=time_window,

@@ -1,9 +1,29 @@
 import { state, notify, saveSettings } from "../state.js";
 import { clearWorkState, persistWorkState } from "../storage.js";
-import { apiRequest, normalizeDriverRoute } from "../api.js";
+import {
+    apiRequest,
+    createPaymentMethod,
+    getDriverEarnings,
+    getPaymentMethods,
+    normalizeDriverRoute,
+    setPreferredPaymentMethod
+} from "../api.js";
 import { render } from "../views.js";
 import { syncOutbox, stopLocationTracking, stopDemoLocationSimulation } from "./driver-events.js";
 import { isPickupConfirmedForRoute } from "./route-state.mjs";
+
+function financialLoadError(error, resource) {
+    if (error?.status === 404) {
+        return `${resource} aren't available from the active service yet.`;
+    }
+    if (error?.status >= 500) {
+        return `${resource} couldn't be loaded because the service encountered an error. Try again shortly.`;
+    }
+    if (error?.name === "TypeError") {
+        return `Couldn't connect to ${resource.toLowerCase()}. Check your connection and try again.`;
+    }
+    return error?.message || `${resource} couldn't be loaded.`;
+}
 
 export async function loadDriverAccount(identity) {
     const [profile, routes, vehicles] = await Promise.all([
@@ -22,6 +42,7 @@ export async function loadDriverAccount(identity) {
     state.driverProfile = profile;
     state.driverRoutes = routes.map(normalizeDriverRoute);
     state.vehicles = vehicles;
+    await refreshFinancialData(false);
     const serverRoute = state.driverRoutes.find((route) => route.status === "in_progress") || null;
     const savedRoute = state.route;
     if (savedRoute?.route_id !== serverRoute?.route_id) {
@@ -55,6 +76,56 @@ export async function loadDriverAccount(identity) {
         state.failed = new Set();
         state.arrived = new Set();
         await clearWorkState();
+    }
+}
+
+export async function refreshFinancialData(renderAfter = true) {
+    const [earningsResult, paymentMethodsResult] = await Promise.allSettled([
+        getDriverEarnings(),
+        getPaymentMethods()
+    ]);
+    state.earnings = earningsResult.status === "fulfilled" ? earningsResult.value : null;
+    state.earningsError = earningsResult.status === "rejected"
+        ? financialLoadError(earningsResult.reason, "Earnings data")
+        : "";
+    state.paymentMethods = paymentMethodsResult.status === "fulfilled"
+        ? paymentMethodsResult.value
+        : [];
+    state.paymentMethodsError = paymentMethodsResult.status === "rejected"
+        ? financialLoadError(paymentMethodsResult.reason, "Payout methods")
+        : "";
+    if (renderAfter) render();
+}
+
+export async function addPaymentMethod() {
+    const methodType = document.getElementById("payment-method-type")?.value;
+    const payload = { method_type: methodType };
+    if (methodType === "upi") {
+        payload.upi_id = document.getElementById("payment-upi-id")?.value.trim();
+    } else {
+        payload.account_holder_name = document.getElementById("payment-account-holder")?.value.trim();
+        payload.account_number = document.getElementById("payment-account-number")?.value.trim();
+        payload.ifsc_code = document.getElementById("payment-ifsc")?.value.trim();
+    }
+    payload.is_preferred = state.paymentMethods.length === 0;
+    try {
+        await createPaymentMethod(payload);
+        await refreshFinancialData(false);
+        render();
+        notify("Payout method saved securely.", "success");
+    } catch (error) {
+        notify(error.message || "Could not save payout method.", "error");
+    }
+}
+
+export async function selectPreferredPaymentMethod(methodId) {
+    try {
+        await setPreferredPaymentMethod(methodId);
+        await refreshFinancialData(false);
+        render();
+        notify("Preferred payout method updated.", "success");
+    } catch (error) {
+        notify(error.message || "Could not update preferred payout method.", "error");
     }
 }
 

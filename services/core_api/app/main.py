@@ -24,7 +24,7 @@ from services.core_api.app.staff.router import router as staff_router
 from services.core_api.app.home.router import router as home_router
 from services.core_api.app.admin.deps import require_admin
 from services.core_api.app.admin.security import csrf_check
-from services.core_api.app.admin.routes import activity, drivers, merchants, orders, overview, users, warehouses
+from services.core_api.app.admin.routes import activity, driver_earnings, drivers, merchants, orders, overview, users, warehouses
 from services.core_api.app.panels import router as panels_router
 from services.core_api.app.admin.security import ADMIN_SECURITY_HEADERS, DRIVER_APP_SECURITY_HEADERS
 
@@ -142,7 +142,7 @@ admin_router = APIRouter(
     prefix="/api/admin",
     dependencies=[Depends(require_admin), Depends(csrf_check)],
 )
-for route_module in (overview, drivers, users, merchants, warehouses, orders, activity):
+for route_module in (overview, drivers, users, merchants, warehouses, orders, activity, driver_earnings):
     admin_router.include_router(route_module.router)
 app.include_router(admin_router)
 app.include_router(panels_router)

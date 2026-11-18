@@ -77,6 +77,7 @@ def route_payload(route: Route, locations: Optional[dict] = None) -> dict:
                 "recipient_phone": stop.order.recipient_phone,
                 "delivery_address": stop.order.delivery_address,
                 "tracking_token": stop.order.tracking_token,
+                "planned_distance_m": getattr(stop, "planned_distance_m", None),
                 "window_earliest": (
                     stop.order.window_earliest.isoformat()
                     if stop.order.window_earliest

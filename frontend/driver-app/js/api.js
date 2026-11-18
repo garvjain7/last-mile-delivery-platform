@@ -99,7 +99,30 @@ export async function apiRequest(path, options = {}) {
     if (!response.ok) {
         const detail = body.detail;
         const message = typeof detail === "string" ? detail : "The request could not be completed.";
-        throw new Error(message);
+        const error = new Error(message);
+        error.status = response.status;
+        throw error;
     }
     return body;
+}
+
+export function getDriverEarnings() {
+    return apiRequest("/driver/earnings");
+}
+
+export function getPaymentMethods() {
+    return apiRequest("/driver/payment-methods");
+}
+
+export function createPaymentMethod(payload) {
+    return apiRequest("/driver/payment-methods", {
+        method: "POST",
+        body: JSON.stringify(payload)
+    });
+}
+
+export function setPreferredPaymentMethod(methodId) {
+    return apiRequest(`/driver/payment-methods/${encodeURIComponent(methodId)}/preferred`, {
+        method: "PUT"
+    });
 }

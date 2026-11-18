@@ -1,8 +1,9 @@
-# NATIVE REDIS STREAM STRUCTURE
-# Unified async connection pool wrapper for redis.asyncio (supports Render Key-Value Valkey 8 & Redis 6/7)
+"""Shared Redis Streams client and field encoding helpers."""
 
+import json
 import os
-from typing import Optional
+from collections.abc import Mapping
+from typing import Any, Optional
 import redis.asyncio as redis
 
 # Global connection pool instance
@@ -32,9 +33,39 @@ async def close_redis_client() -> None:
         await _redis_client.close()
         _redis_client = None
 
-async def add_to_stream(stream_name: str, fields: dict) -> str:
+async def add_to_stream(stream_name: str, fields: Mapping[str, Any]) -> str:
     """
-    Publish an event to a Redis Stream, retaining approximately 10,000 entries.
+    Publish an event to a Redis Stream, retaining approximately 50,000 entries.
     """
     client = await get_redis_client()
-    return await client.xadd(stream_name, fields, maxlen=10_000, approximate=True)
+    encoded_fields = {}
+    for key, value in fields.items():
+        if value is None:
+            continue
+        if isinstance(value, bool):
+            encoded_fields[key] = str(value).lower()
+        elif isinstance(value, (dict, list)):
+            encoded_fields[key] = json.dumps(value, separators=(",", ":"))
+        elif isinstance(value, (str, int, float, bytes)):
+            encoded_fields[key] = value
+        else:
+            raise TypeError(
+                f"Unsupported Redis stream field type for {key!r}: {type(value).__name__}"
+            )
+    return await client.xadd(
+        stream_name,
+        encoded_fields,
+        maxlen=50_000,
+        approximate=True,
+    )
+
+
+def decode_stream_fields(
+    fields: Mapping[bytes | str, bytes | str],
+) -> dict[str, str]:
+    """Normalize Redis stream fields from bytes or decoded string responses."""
+    return {
+        key.decode() if isinstance(key, bytes) else key:
+        value.decode() if isinstance(value, bytes) else value
+        for key, value in fields.items()
+    }

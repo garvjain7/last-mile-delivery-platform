@@ -32,7 +32,11 @@ export const state = {
     settings: readSettings(),
     driverProfile: null,
     driverRoutes: [],
-    vehicles: []
+    vehicles: [],
+    earnings: null,
+    earningsError: "",
+    paymentMethods: [],
+    paymentMethodsError: ""
 };
 
 export function readSettings() {

@@ -619,7 +619,7 @@ export function openRouteDetails(routeId) {
         <p class="eyebrow">ASSIGNED ROUTE</p><h2>${escapeHTML(route.title)}</h2>
         <p class="dialog-copy">${escapeHTML(route.area)} · ${route.stop_count} stops · ${route.distance_km} km · about ${Math.floor(route.duration_min / 60)}h ${route.duration_min % 60}m</p>
         <section class="route-detail-pickup"><span class="pickup-pin">⌖</span><div><small>PICKUP LOCATION</small><strong>${escapeHTML(route.pickup)}</strong></div></section>
-        <section class="route-detail-pickup"><span class="pickup-pin">▰</span><div><small>ASSIGNED VEHICLE</small><strong>${escapeHTML(vehicle?.registration_number || "No vehicle linked")}${vehicle?.type ? ` · ${escapeHTML(vehicle.type.replaceAll("_", " "))}` : ""}</strong></div></section>
+        <section class="route-detail-pickup"><span class="pickup-pin">▰</span><div><small>ASSIGNED VEHICLE</small><strong>${escapeHTML(route.vehicle_registration || vehicle?.registration_number || "No vehicle linked")}${vehicle?.type ? ` · ${escapeHTML(vehicle.type.replaceAll("_", " "))}` : ""}</strong></div></section>
         <section class="route-window-list" aria-label="Scheduled delivery windows">
             <div><strong>Delivery windows</strong><small>Priority flags are not provided by the route service.</small></div>
             ${route.stops.slice(0, 3).map((stop) => `<p><span aria-hidden="true">◷</span><strong>Stop ${stop.sequence}</strong><span>${escapeHTML(stop.window)}</span></p>`).join("")}

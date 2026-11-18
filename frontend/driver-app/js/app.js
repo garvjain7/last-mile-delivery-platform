@@ -3,7 +3,15 @@ import { openDatabase, restoreWorkState, refreshOutboxCount, removeLegacyDemoDat
 import { apiRequest } from "./api.js";
 import { render } from "./views.js";
 import { syncOutbox, acceptRoute, confirmPickup, scanPickupParcel, scanStopParcel, arriveAtStop, openDelivery, openException, openRouteDetails, startLocation, startDemoLocationSimulation, stopLocationTracking, stopDemoLocationSimulation } from "./services/driver-events.js";
-import { loadDriverAccount, searchVehicles, finishRoute, saveProfileSettings } from "./services/account.js";
+import {
+    addPaymentMethod,
+    finishRoute,
+    loadDriverAccount,
+    refreshFinancialData,
+    saveProfileSettings,
+    searchVehicles,
+    selectPreferredPaymentMethod
+} from "./services/account.js";
 import { dismissCustomerNoteUpdate, openCustomerChat, receiveCustomerNoteUpdate } from "./components/communications.js";
 import { showOrderRequest } from "./components/order-request.js";
 import { showSosConfirmation } from "./components/safety-tools.js";
@@ -59,6 +67,10 @@ function clearDriverSessionState() {
     state.isSyncing = false;
     state.syncRequested = false;
     state.driverProfile = null;
+    state.earnings = null;
+    state.earningsError = "";
+    state.paymentMethods = [];
+    state.paymentMethodsError = "";
     state.tab = "Today";
     state.view = "session-required";
     state.sessionMessage = "You are signed out. Sign in with your central account to continue.";
@@ -121,6 +133,7 @@ document.addEventListener("click", async (event) => {
     if (tabButton) {
         state.tab = tabButton.dataset.tab;
         render();
+        if (state.tab === "Earnings") await refreshFinancialData();
         return;
     }
     const routePanelButton = event.target.closest("[data-route-panel]");
@@ -152,11 +165,22 @@ document.addEventListener("click", async (event) => {
     if (action === "open-customer-chat") openCustomerChat(button.dataset.order);
     if (action === "dismiss-customer-note") dismissCustomerNoteUpdate(button.dataset.order);
     if (action === "confirm-sos") showSosConfirmation();
-    if (action === "sync") await syncOutbox();
+    if (action === "sync") {
+        await syncOutbox();
+        await refreshFinancialData();
+    }
+    if (action === "refresh-financial-data") await refreshFinancialData();
     if (action === "start-location") await startLocation();
     if (action === "demo-gps") startDemoLocationSimulation();
     if (action === "search-vehicles") await searchVehicles();
     if (action === "save-profile-settings") saveProfileSettings();
+    if (action === "open-payment-method-modal") {
+        document.getElementById("payment-method-dialog")?.showModal();
+    }
+    if (action === "add-payment-method") await addPaymentMethod();
+    if (action === "select-payment-method") {
+        await selectPreferredPaymentMethod(button.dataset.paymentMethod);
+    }
     if (action === "close-dialog") button.closest("dialog")?.close();
 });
 
@@ -182,6 +206,13 @@ document.addEventListener("input", (event) => {
 });
 
 document.addEventListener("change", async (event) => {
+    const paymentTypeSelect = event.target.closest("#payment-method-type");
+    if (paymentTypeSelect) {
+        document.querySelectorAll("[data-payment-fields]").forEach((fields) => {
+            fields.hidden = fields.dataset.paymentFields !== paymentTypeSelect.value;
+        });
+        return;
+    }
     const slider = event.target.closest("[data-route-start]");
     if (!slider || slider.value !== "100") return;
     slider.closest("dialog")?.close();

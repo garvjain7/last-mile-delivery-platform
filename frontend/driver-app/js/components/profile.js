@@ -1,5 +1,6 @@
 import { state, escapeHTML } from "../state.js";
 import { configuredDriverGatewayBase } from "../api.js";
+import { paymentMethodsView } from "./payment-methods.js";
 
 export function profileView() {
     const identity = state.identity || {};
@@ -31,9 +32,10 @@ export function profileView() {
         <section class="section-block settings-section">
             <div class="section-heading"><div><p class="eyebrow">YOUR DETAILS</p><h3>Driver profile</h3></div></div>
             <label class="field-label" for="driver-full-name">Full name</label>
-            <input id="driver-full-name" class="text-input" value="${escapeHTML(identity.full_name || "")}" maxlength="200" required>
+            <input id="driver-full-name" class="text-input" type="text" autocomplete="name" value="${escapeHTML(identity.full_name || "")}" maxlength="200" required>
             <label class="field-label" for="driver-phone">Phone</label>
-            <input id="driver-phone" class="text-input" type="tel" value="${escapeHTML(identity.phone || "")}" placeholder="+919876543210">
+            <input id="driver-phone" class="text-input" type="tel" inputmode="tel" autocomplete="tel" value="${escapeHTML(identity.phone || "")}" placeholder="+919876543210" maxlength="16" pattern="\\+[1-9][0-9]{7,14}" title="Use E.164 format, for example +919876543210">
+            <p class="field-hint">Use international E.164 format, including the leading + and country code.</p>
         </section>
         <section class="section-block settings-section">
             <div class="section-heading"><div><p class="eyebrow">ON THE ROAD</p><h3>Vehicle</h3></div><span class="count-pill">Registration</span></div>
@@ -59,7 +61,8 @@ export function profileView() {
             <p class="field-hint">Optional. Enables the in-app route map. This browser key is visible to app users; restrict it by website referrer and enable only Maps Embed API. Google Cloud project billing must be configured.</p>
             <button class="button button-secondary" data-action="save-profile-settings">Save settings</button>
         </section>
-        <button class="profile-link-card" data-tab="Earnings"><span class="activity-summary-icon">₹</span><span><strong>Earnings & payouts</strong><small>Payout data is not connected to the driver API</small></span><b>→</b></button>
+        ${paymentMethodsView()}
+        <button class="profile-link-card" data-tab="Earnings"><span class="activity-summary-icon">₹</span><span><strong>Earnings &amp; wallet</strong><small>View balance and transaction history</small></span><b>→</b></button>
         <button class="profile-link-card" data-tab="Activity"><span class="activity-summary-icon">↻</span><span><strong>Activity & offline sync</strong><small>${state.outboxCount ? `${state.outboxCount} item${state.outboxCount === 1 ? "" : "s"} waiting` : "View recent driver actions"}</small></span><b>→</b></button>
         <button class="button button-secondary signout-button" data-action="logout-driver-app" type="button">Log out of driver app</button>
         `;
