@@ -119,9 +119,13 @@ python -c "import fastapi, uvicorn, sqlalchemy, asyncpg, redis, httpx, minio, py
 
 ### Driver earnings database setup
 
-For a new database, apply `schema.sql`. For an existing database, apply
-`db/migrations/2026_11_18_01_driver_payments_earnings.sql` once before deploying
-the updated services. Migrations are not run automatically at startup. Configure
+For a new database, apply `schema.sql`. Migrations are not run automatically at
+startup. For an existing database, inspect its current `driver_earnings` schema
+before applying a migration. The `2026_11_18_01_driver_payments_earnings.sql`
+migration assumes that table does not already exist. If it contains the legacy
+`status` column, use
+`db/migrations/2026_11_19_01_driver_earnings_legacy_archive.sql` to preserve it
+as `driver_earnings_legacy` and create the current ledger tables. Configure
 `PAYMENT_METHOD_ENCRYPTION_KEY` before drivers save payout methods.
 
 ### Run the Driver App locally
@@ -162,6 +166,14 @@ These are demo records, not operational data. Seeded scan history does not pre-m
 ## 🐳 Docker & Cloud Deployment
 
 ### Local Container Deployment (Docker Compose)
+
+The MinIO community image is built from source on first use, so its initial startup can take several minutes. Object data is stored in the `minio-data` Docker volume.
+
+Before starting the local infrastructure profile, prepare the OSRM routing data once:
+```powershell
+.\scripts\setup_local_osrm.ps1
+```
+This downloads the approximately 533 MB South India OpenStreetMap extract to your local app-data folder, prepares it in Docker, and starts OSRM on port `5000`. The prepared graph is kept in the `lmd-osrm-data` Docker volume.
 
 Bring up infrastructure containers locally:
 ```bash

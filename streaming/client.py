@@ -21,7 +21,7 @@ async def get_redis_client() -> redis.Redis:
         _redis_client = redis.from_url(
             redis_url,
             decode_responses=True,
-            socket_timeout=5.0,
+            socket_timeout=15.0,
             socket_connect_timeout=5.0
         )
     return _redis_client
