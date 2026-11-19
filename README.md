@@ -124,6 +124,17 @@ For a new database, apply `schema.sql`. For an existing database, apply
 the updated services. Migrations are not run automatically at startup. Configure
 `PAYMENT_METHOD_ENCRYPTION_KEY` before drivers save payout methods.
 
+### Run the Driver App locally
+
+From the repository root, start the Core API and Driver Gateway together:
+```bash
+.\venv\Scripts\python.exe .\scripts\run_driver_app.py
+```
+
+Open `http://127.0.0.1:8000/driver`. Keep this terminal running while using the
+app; the Gateway listens on port `8002`. The launcher stops both services when
+you press `Ctrl+C` or either service exits.
+
 ### Step 4: Run All Services Locally
 
 Instead of opening 5 separate terminal windows, you can boot the entire platform with one command using the included `honcho` process manager. 
@@ -173,6 +184,8 @@ The repository includes a ready-to-use **`render.yaml`** Blueprint file for 1-cl
 
 ## 📚 Documentation & Specifications
 
+- **[`docs/driver-app.md`](docs/driver-app.md)**: Canonical Driver App guide, including frontend structure, database/storage, API contracts, and current workflow boundaries.
+- **[`docs/driver-gateway-payment-system.md`](docs/driver-gateway-payment-system.md)**: Separate quick reference for driver earnings and payout-method behavior.
 - **`docs/PRD.md`**: Product requirements, scope boundaries, and domain models.
 - **`docs/architecture.md`**: Architecture decision records (ADRs), data flows, and failure isolation rules.
 - **`docs/API_CONTRACTS.md`**: REST routes, WebSocket specifications, and event payload schemas.

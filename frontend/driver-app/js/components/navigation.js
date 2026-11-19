@@ -17,7 +17,7 @@ export function topbar() {
             ${hub ? `<span class="workspace-context">${escapeHTML(hub)}</span>` : ""}
             <div class="topbar-right">
                 <button class="sync-indicator ${!connected ? "is-offline" : lowSignal ? "is-low-signal" : ""}" data-action="sync" title="Connection status and queued event sync" aria-label="${networkLabel}${state.outboxCount ? `, ${state.outboxCount} queued` : ""}. Sync events">
-                    <span class="sync-dot" aria-hidden="true"></span><span>${networkLabel}</span>${state.outboxCount ? `<b>${state.outboxCount}</b>` : ""}
+                    <span class="sync-dot" aria-hidden="true"></span><span>${networkLabel}</span>
                 </button>
                 <button class="topbar-activity" data-tab="Activity" aria-label="Open activity and sync queue"><span aria-hidden="true">↻</span><span>Activity</span>${state.outboxCount ? `<b>${state.outboxCount}</b>` : ""}</button>
                 <button class="text-button compact-logout" data-action="logout-driver-app" aria-label="Log out of driver app">Log out</button>

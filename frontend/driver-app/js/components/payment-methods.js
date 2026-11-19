@@ -2,8 +2,11 @@ import { escapeHTML, state } from "../state.js";
 
 export function paymentMethodsView() {
     const methods = state.paymentMethods || [];
+    const isLoading = state.financialDataLoading && !state.paymentMethodsError;
     const rows = state.paymentMethodsError
         ? ""
+        : isLoading && !methods.length
+        ? '<p class="field-hint" role="status">Loading payout methods…</p>'
         : methods.length
         ? methods.map((method) => `
             <div class="payment-method-row">
@@ -16,6 +19,9 @@ export function paymentMethodsView() {
                     : `<button class="text-button" data-action="select-payment-method" data-payment-method="${escapeHTML(method.method_id)}">Make preferred</button>`}
             </div>`).join("")
         : '<p class="field-hint">No payout method saved yet.</p>';
+    const refreshStatus = isLoading && methods.length
+        ? '<p class="field-hint" role="status">Refreshing payout methods…</p>'
+        : "";
     const methodError = state.paymentMethodsError
         ? `<div class="payment-error-block"><p class="payment-error" id="payment-methods-status" role="alert">${escapeHTML(state.paymentMethodsError)}</p>
             <button class="button button-secondary button-small finance-retry" data-action="refresh-financial-data" type="button">Retry payout methods</button></div>`
@@ -27,7 +33,7 @@ export function paymentMethodsView() {
             <button class="button button-secondary button-small" data-action="open-payment-method-modal" type="button" ${state.paymentMethodsError ? 'disabled aria-describedby="payment-methods-status"' : ""}>Add / Update Payout Method</button>
         </div>
         ${methodError}
-        ${state.paymentMethodsError ? "" : `<div class="payment-method-list">${rows}</div>`}
+        ${state.paymentMethodsError ? "" : `${refreshStatus}<div class="payment-method-list">${rows}</div>`}
         <p class="field-hint">All financial records and account details are securely encrypted. Saved payout details are only shown in masked form.</p>
         ${state.paymentMethodsError ? "" : `
         <dialog id="payment-method-dialog" class="action-dialog payment-method-dialog" aria-labelledby="payment-method-dialog-title">

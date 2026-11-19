@@ -43,12 +43,17 @@ export function earningsView() {
             ? '<p class="field-hint">No earnings transactions yet.</p>'
             : `<p class="field-hint" role="status">${state.earningsError
                 ? "Transaction history is unavailable until earnings data can be loaded."
-                : "Loading earnings transactions…"}</p>`;
+                : state.financialDataLoading
+                    ? "Loading earnings transactions…"
+                    : "Earnings transactions have not loaded yet."}</p>`;
     const payoutStatus = !earnings
-        ? state.earningsError || "Payout requests are unavailable while your ledger cannot be loaded."
+        ? state.earningsError || (state.financialDataLoading
+            ? "Checking earnings before payout availability can be shown."
+            : "Payout requests are unavailable until earnings data can be loaded.")
         : hasAvailableBalance
             ? "Payout requests are not enabled yet. Your available balance remains in your wallet."
             : "Payout requests require posted ledger earnings and are not enabled yet.";
+    const unavailableValue = state.financialDataLoading ? "Loading…" : "Unavailable";
 
     return `
         <section class="page-heading">
@@ -59,14 +64,15 @@ export function earningsView() {
         <section class="earnings-card">
             <span class="earnings-card-icon">₹</span>
             <p class="eyebrow">TOTAL AVAILABLE BALANCE</p>
-            <h2>${earnings ? escapeHTML(formatInr(earnings.available_balance)) : "Unavailable"}</h2>
+            <h2>${earnings ? escapeHTML(formatInr(earnings.available_balance)) : unavailableValue}</h2>
             <div class="earnings-hero-breakdown" aria-label="Available earnings breakdown">
-                <div><span>Base pay</span><strong>${earnings ? escapeHTML(formatInr(earnings.base_pay)) : "Unavailable"}</strong></div>
-                <div><span>Tips</span><strong>${earnings ? escapeHTML(formatInr(earnings.tips)) : "Unavailable"}</strong></div>
-                <div><span>Bonuses</span><strong>${earnings ? escapeHTML(formatInr(earnings.bonuses)) : "Unavailable"}</strong></div>
+                <div><span>Base pay</span><strong>${earnings ? escapeHTML(formatInr(earnings.base_pay)) : unavailableValue}</strong></div>
+                <div><span>Tips</span><strong>${earnings ? escapeHTML(formatInr(earnings.tips)) : unavailableValue}</strong></div>
+                <div><span>Bonuses</span><strong>${earnings ? escapeHTML(formatInr(earnings.bonuses)) : unavailableValue}</strong></div>
             </div>
             <button class="button button-primary payout-request" type="button" disabled aria-describedby="payout-request-status">Request Payout</button>
             <p id="payout-request-status" class="payout-request-status">${escapeHTML(payoutStatus)}</p>
+            ${state.financialDataLoading ? '<p class="field-hint" role="status">Refreshing financial data…</p>' : ""}
             ${!earnings && state.earningsError
                 ? '<button class="button button-secondary finance-retry" type="button" data-action="refresh-financial-data">Retry earnings</button>'
                 : ""}
@@ -74,8 +80,8 @@ export function earningsView() {
         </section>
         <section class="wallet-breakdown" aria-label="Wallet earnings breakdown">
             <div class="section-heading"><div><p class="eyebrow">LEDGER SUMMARY</p><h3>Other totals</h3></div></div>
-            <div class="wallet-line-item"><span>Adjustments</span><strong>${earnings ? escapeHTML(formatInr(earnings.adjustments)) : "Unavailable"}</strong></div>
-            <div class="wallet-line-item"><span>Total earned</span><strong>${earnings ? escapeHTML(formatInr(earnings.total_earned)) : "Unavailable"}</strong></div>
+            <div class="wallet-line-item"><span>Adjustments</span><strong>${earnings ? escapeHTML(formatInr(earnings.adjustments)) : unavailableValue}</strong></div>
+            <div class="wallet-line-item"><span>Total earned</span><strong>${earnings ? escapeHTML(formatInr(earnings.total_earned)) : unavailableValue}</strong></div>
             <p>Delivery pay is credited after a completed delivery is processed. Tips and other adjustments are posted by trusted operations.</p>
         </section>
         <section class="section-block earning-history">

@@ -1,4 +1,4 @@
-import { state, notify, saveSettings } from "../state.js";
+import { state, notify } from "../state.js";
 import { clearWorkState, persistWorkState } from "../storage.js";
 import {
     apiRequest,
@@ -11,6 +11,8 @@ import {
 import { render } from "../views.js";
 import { syncOutbox, stopLocationTracking, stopDemoLocationSimulation } from "./driver-events.js";
 import { isPickupConfirmedForRoute } from "./route-state.mjs";
+
+let activeFinancialRequests = 0;
 
 function financialLoadError(error, resource) {
     if (error?.status === 404) {
@@ -80,21 +82,31 @@ export async function loadDriverAccount(identity) {
 }
 
 export async function refreshFinancialData(renderAfter = true) {
-    const [earningsResult, paymentMethodsResult] = await Promise.allSettled([
-        getDriverEarnings(),
-        getPaymentMethods()
-    ]);
-    state.earnings = earningsResult.status === "fulfilled" ? earningsResult.value : null;
-    state.earningsError = earningsResult.status === "rejected"
-        ? financialLoadError(earningsResult.reason, "Earnings data")
-        : "";
-    state.paymentMethods = paymentMethodsResult.status === "fulfilled"
-        ? paymentMethodsResult.value
-        : [];
-    state.paymentMethodsError = paymentMethodsResult.status === "rejected"
-        ? financialLoadError(paymentMethodsResult.reason, "Payout methods")
-        : "";
+    activeFinancialRequests += 1;
+    state.financialDataLoading = true;
+    state.earningsError = "";
+    state.paymentMethodsError = "";
     if (renderAfter) render();
+    try {
+        const [earningsResult, paymentMethodsResult] = await Promise.allSettled([
+            getDriverEarnings(),
+            getPaymentMethods()
+        ]);
+        state.earnings = earningsResult.status === "fulfilled" ? earningsResult.value : null;
+        state.earningsError = earningsResult.status === "rejected"
+            ? financialLoadError(earningsResult.reason, "Earnings data")
+            : "";
+        state.paymentMethods = paymentMethodsResult.status === "fulfilled"
+            ? paymentMethodsResult.value
+            : [];
+        state.paymentMethodsError = paymentMethodsResult.status === "rejected"
+            ? financialLoadError(paymentMethodsResult.reason, "Payout methods")
+            : "";
+    } finally {
+        activeFinancialRequests -= 1;
+        state.financialDataLoading = activeFinancialRequests > 0;
+        if (renderAfter) render();
+    }
 }
 
 export async function addPaymentMethod() {
@@ -175,9 +187,7 @@ export async function finishRoute() {
     notify("Route completion confirmed.", "success");
 }
 
-export async function saveProfileSettings() {
-    const gatewayUrl = document.getElementById("gateway-api-url")?.value.trim();
-    const googleMapsEmbedKey = document.getElementById("google-maps-embed-key")?.value.trim();
+export async function saveDriverProfile() {
     const vehicle = document.getElementById("vehicle-registration")?.value || "";
     try {
         const fullName = document.getElementById("driver-full-name")?.value.trim();
@@ -202,15 +212,8 @@ export async function saveProfileSettings() {
             state.vehicles = await apiRequest("/driver/vehicles");
         }
 
-        if (gatewayUrl) state.settings.driverGatewayBase = gatewayUrl.replace(/\/+$/, "");
-        if (googleMapsEmbedKey) {
-            state.settings.googleMapsEmbedKey = googleMapsEmbedKey;
-        } else {
-            delete state.settings.googleMapsEmbedKey;
-        }
-        saveSettings();
         render();
-        notify("Profile settings saved.", "success");
+        notify("Profile changes saved.", "success");
     } catch (error) {
         notify(error.message || "Could not save profile settings.", "error");
     }

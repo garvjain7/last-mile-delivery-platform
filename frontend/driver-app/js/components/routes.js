@@ -94,7 +94,7 @@ function activePhaseMap(route, stop) {
         ${locationControls}
         ${apiKey
             ? `<iframe class="route-map-frame" title="Map to ${label}" src="https://www.google.com/maps/embed/v1/place?${escapeHTML(embed.toString())}" loading="lazy" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>`
-            : `<p class="map-message">Map preview requires a Google Maps Embed API key. Use Get directions to open navigation for this ${isPickup ? "depot" : "customer"} stop.</p>`}
+            : `<p class="map-message">In-app map preview is unavailable. Use Get directions to navigate to this ${isPickup ? "depot" : "customer"} stop.</p>`}
     </section>`;
 }
 
@@ -126,10 +126,7 @@ export function routeMap(route) {
             loading="lazy"
             referrerpolicy="strict-origin-when-cross-origin"
             allowfullscreen></iframe>`
-            : `<div class="map-message">
-                <p>Add a Google Maps Embed API key in Profile → Sync settings to show the map here.</p>
-                <p>The key is stored on this device. Restrict it to your app’s website referrer and the Maps Embed API in Google Cloud.</p>
-            </div>`}
+            : `<p class="map-message">In-app map preview is unavailable. Use Open full route to navigate this route.</p>`}
     </section>`;
 }
 

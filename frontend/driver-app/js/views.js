@@ -25,12 +25,30 @@ export function render() {
     closeCustomerChatIfInactive(state.view !== "app");
     closeSosConfirmationIfInactive();
     if (state.view === "session-required") {
+        const accountUnavailable = state.sessionIssue === "account";
+        const accessRequired = state.sessionIssue === "role";
+        const heading = accountUnavailable
+            ? "Driver account unavailable"
+            : accessRequired
+                ? "Driver access required"
+                : state.sessionIssue === "verification" || state.sessionIssue === "connection"
+                    ? "Couldn't verify driver session"
+                    : "Central driver session required";
+        const description = accountUnavailable
+            ? "Your central session is active, but driver profile and route data could not be loaded."
+            : accessRequired
+                ? "The signed-in account does not have the driver role. Contact your organization administrator."
+                : state.sessionIssue === "connection"
+                    ? "Reconnect to the network to verify your existing session and load driver information."
+                    : state.sessionIssue === "verification"
+                        ? "The central authentication service could not verify your session. Try again shortly."
+                        : "Use the organization sign-in page to authenticate, then return to this app to continue your route.";
         appRoot.innerHTML = `<main class="session-required">${brandMark("session-required-mark")}<p class="eyebrow">LASTMILE / DRIVER</p>
-            <h1>Central driver session required</h1>
-            <p>Use the organization sign-in page to authenticate, then return to this app to continue your route.</p>
+            <h1>${heading}</h1>
+            <p>${description}</p>
             ${state.sessionMessage ? `<p class="session-message" role="status">${escapeHTML(state.sessionMessage)}</p>` : ""}
             <div class="session-actions">
-                <button class="button button-primary" data-action="check-central-session">Check session again</button>
+                <button class="button button-primary" data-action="check-central-session">${accountUnavailable ? "Retry driver data" : "Check session again"}</button>
                 <button class="button button-secondary" data-action="open-central-login">Open central sign in</button>
                 <button class="button button-secondary" data-action="logout-driver-app">Log out</button>
             </div></main>`;

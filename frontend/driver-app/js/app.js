@@ -8,7 +8,7 @@ import {
     finishRoute,
     loadDriverAccount,
     refreshFinancialData,
-    saveProfileSettings,
+    saveDriverProfile,
     searchVehicles,
     selectPreferredPaymentMethod
 } from "./services/account.js";
@@ -19,28 +19,59 @@ import { showSosConfirmation } from "./components/safety-tools.js";
 document.addEventListener("driver:render", render);
 
 async function restoreCentralSession() {
+    let identity;
     try {
-        const identity = await apiRequest("/auth/me");
-        if (!identity.roles?.includes("driver")) {
-            state.sessionMessage = "The active Core API session does not have the driver role.";
-            state.view = "session-required";
-            render();
-            return;
-        }
-        await loadDriverAccount(identity);
-        state.sessionMessage = "";
-        state.view = "app";
-        render();
-        await syncOutbox({ quiet: true });
+        identity = await apiRequest("/auth/me");
     } catch (error) {
         stopLocationTracking();
         stopDemoLocationSimulation();
-        console.warn("Could not restore the centralized driver session.", error);
-        state.sessionMessage = navigator.onLine
+        console.warn("Could not verify the centralized driver session.", error);
+        state.sessionIssue = error?.status === 401
+            ? "authentication"
+            : !navigator.onLine || error?.name === "TypeError"
+                ? "connection"
+                : "verification";
+        state.sessionMessage = state.sessionIssue === "authentication"
             ? "Sign in through your organization's centralized authentication, then check your session again."
-            : "Connect to the network to verify your centralized driver session.";
+            : state.sessionIssue === "connection"
+                ? "Connect to the network to verify your centralized driver session."
+                : "The authentication service could not verify your session. Try again shortly.";
         state.view = "session-required";
         render();
+        return;
+    }
+    if (!identity.roles?.includes("driver")) {
+        stopLocationTracking();
+        stopDemoLocationSimulation();
+        state.sessionIssue = "role";
+        state.sessionMessage = "The active Core API session does not have the driver role.";
+        state.view = "session-required";
+        render();
+        return;
+    }
+    try {
+        await loadDriverAccount(identity);
+    } catch (error) {
+        stopLocationTracking();
+        stopDemoLocationSimulation();
+        console.error("Could not load the driver account.", error);
+        state.sessionIssue = "account";
+        state.sessionMessage = !navigator.onLine
+            ? "Connect to the network, then retry loading your driver account."
+            : `Your session is valid, but driver data could not be loaded: ${error?.message || "Please try again."}`;
+        state.view = "session-required";
+        render();
+        return;
+    }
+    state.sessionIssue = "";
+    state.sessionMessage = "";
+    state.view = "app";
+    render();
+    try {
+        await syncOutbox({ quiet: true });
+    } catch (error) {
+        console.warn("Could not synchronize the driver outbox after session restore.", error);
+        notify("Your session is active, but saved driver actions could not be synchronized.", "warning");
     }
 }
 
@@ -69,10 +100,12 @@ function clearDriverSessionState() {
     state.driverProfile = null;
     state.earnings = null;
     state.earningsError = "";
+    state.financialDataLoading = false;
     state.paymentMethods = [];
     state.paymentMethodsError = "";
     state.tab = "Today";
     state.view = "session-required";
+    state.sessionIssue = "authentication";
     state.sessionMessage = "You are signed out. Sign in with your central account to continue.";
     attemptCookieCleanup();
 }
@@ -173,7 +206,7 @@ document.addEventListener("click", async (event) => {
     if (action === "start-location") await startLocation();
     if (action === "demo-gps") startDemoLocationSimulation();
     if (action === "search-vehicles") await searchVehicles();
-    if (action === "save-profile-settings") saveProfileSettings();
+    if (action === "save-driver-profile") await saveDriverProfile();
     if (action === "open-payment-method-modal") {
         document.getElementById("payment-method-dialog")?.showModal();
     }

@@ -10,6 +10,7 @@ export const state = {
     tab: "Today",
     deliveriesFilter: "All",
     routePanel: "map",
+    sessionIssue: "",
     sessionMessage: "",
     identity: null,
     driverUserId: null,
@@ -35,6 +36,7 @@ export const state = {
     vehicles: [],
     earnings: null,
     earningsError: "",
+    financialDataLoading: false,
     paymentMethods: [],
     paymentMethodsError: ""
 };

@@ -1,5 +1,4 @@
 import { state, escapeHTML } from "../state.js";
-import { configuredDriverGatewayBase } from "../api.js";
 import { paymentMethodsView } from "./payment-methods.js";
 
 export function profileView() {
@@ -51,16 +50,7 @@ export function profileView() {
             </select>
             <p class="field-hint">Search and assignment use active vehicles available to this driver.</p>
         </section>
-        <section class="section-block settings-section">
-            <div class="section-heading"><div><p class="eyebrow">CONNECTION</p><h3>Sync settings</h3></div></div>
-            <label class="field-label gateway-label" for="gateway-api-url">Driver Gateway URL (API + event sync)</label>
-            <input id="gateway-api-url" class="text-input" type="url" value="${escapeHTML(configuredDriverGatewayBase())}">
-            <p class="field-hint">Core API manages your centralized httpOnly session; the Driver App does not handle credentials. Authentication tokens are not exposed to page scripts.</p>
-            <label class="field-label" for="google-maps-embed-key">Google Maps Embed API key</label>
-            <input id="google-maps-embed-key" class="text-input" type="text" autocomplete="off" spellcheck="false" maxlength="200" value="${escapeHTML(state.settings.googleMapsEmbedKey || "")}" placeholder="Paste a Maps Embed API key">
-            <p class="field-hint">Optional. Enables the in-app route map. This browser key is visible to app users; restrict it by website referrer and enable only Maps Embed API. Google Cloud project billing must be configured.</p>
-            <button class="button button-secondary" data-action="save-profile-settings">Save settings</button>
-        </section>
+        <button class="button button-secondary" data-action="save-driver-profile" type="button">Save profile changes</button>
         ${paymentMethodsView()}
         <button class="profile-link-card" data-tab="Earnings"><span class="activity-summary-icon">₹</span><span><strong>Earnings &amp; wallet</strong><small>View balance and transaction history</small></span><b>→</b></button>
         <button class="profile-link-card" data-tab="Activity"><span class="activity-summary-icon">↻</span><span><strong>Activity & offline sync</strong><small>${state.outboxCount ? `${state.outboxCount} item${state.outboxCount === 1 ? "" : "s"} waiting` : "View recent driver actions"}</small></span><b>→</b></button>

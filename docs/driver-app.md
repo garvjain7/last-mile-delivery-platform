@@ -18,7 +18,23 @@ Driver Gateway has no Postgres connection. Database-backed driver behavior belon
 
 To inspect a connected PostgreSQL/Neon database without changing it, open [`scripts/check_driver_app_database.sql`](../scripts/check_driver_app_database.sql) in the SQL editor for the database and schema you want to check, then run the whole file. The first result set lists required tables/columns and PostgreSQL types; the second checks required enum types and values; the third checks required extensions; the fourth reports aggregate driver/vehicle/route readiness and active-route consistency. Look for `MISSING TABLE`, `MISSING COLUMN`, `TYPE MISMATCH`, `MISSING ENUM TYPE`, `MISSING ENUM VALUE`, or `MISSING EXTENSION`. `OK` means that catalog item matches the current driver contract; readiness rows can also show that data is absent or inconsistent even when the schema is correct.
 
-The script is read-only. It checks the schema selected by PostgreSQL's current `search_path`; confirm that the SQL editor is connected to the intended database/schema first. It checks the platform's existing driver tables, not tables for unsupported payout, KYC, shift, notification, or support features. It does not check whether the database contains valid driver accounts, assigned routes, vehicles, Redis, or object-storage configuration.
+The script is read-only. It checks the schema selected by PostgreSQL's current `search_path`; confirm that the SQL editor is connected to the intended database/schema first. It checks the driver route and delivery contract, not the finance tables or unsupported KYC, shift, notification, or support features. It does not check whether the database contains valid driver accounts, assigned routes, vehicles, Redis, or object-storage configuration.
+
+## Database and storage
+
+Use the platform's single **PostgreSQL database with PostGIS** as the authoritative store. The root [`schema.sql`](../schema.sql) defines the database objects; it does not create the PostgreSQL server or database. Do not create a separate driver database or connect to PostgreSQL from the browser.
+
+| Storage | Responsibility |
+| --- | --- |
+| PostgreSQL + PostGIS | Durable users, drivers, vehicles, routes, stops, orders, delivery status history, earnings, wallets, and encrypted payout methods. |
+| Redis Streams | Backend transport for accepted driver events; not the durable record of driver or route data. |
+| MinIO | Private delivery and exception evidence files. The current schema does not link the evidence object to an order. |
+| Browser IndexedDB | Device-local active-route progress and queued driver events for offline use; not shared or authoritative server storage. |
+| `localStorage` | Small, non-sensitive presentation and connection settings; never credentials or business records. |
+
+For a fresh database, create/use one PostgreSQL database with PostGIS and apply the complete root [`schema.sql`](../schema.sql). For an existing database, follow the migration instructions in the root [`README.md`](../README.md); migrations are not applied automatically at startup. Configure `DATABASE_URL` for Core API and, for payout methods, `PAYMENT_METHOD_ENCRYPTION_KEY`. Then use an authorized admin/API or seed workflow to provide a driver account, assigned vehicle, and route data—schema setup alone does not create these records. The read-only database check above checks the route/delivery contract, not finance-table readiness.
+
+In PostgreSQL, a **database** is the named container in `DATABASE_URL`; a **schema** is a namespace of tables inside it (normally `public`); and the repository's `schema.sql` is the SQL definition that creates those tables and constraints. The SQL file is not itself a PostgreSQL schema.
 
 ## Driver UI coverage and contract boundaries
 
@@ -31,8 +47,8 @@ The mobile-first UI covers the requested driver workflow through the existing HT
 | Order request overlay | `js/components/order-request.js` renders a high-contrast timed overlay for the `driver:order-request` browser event. Only an unexpired route already returned by the driver's assigned-route API can be started; offer-streams, distances, and payout are not provided by a backend integration. |
 | Routes and acceptance | Routes tab and route-details dialog: assigned planned routes can be reviewed with distance, duration, assigned vehicle, scheduled windows, and a map preview; eligible routes can be started by slider or button when driver status and vehicle match. Stop `order_status` is returned verbatim from the authoritative order status enum. |
 | Deliveries | Deliveries tab: active route manifest, per-stop pending/scanned/arrived/delivered/failed/skipped statuses, summary counts, and filters. Historical completed/failed/returned orders are unavailable because the API lists only planned and in-progress routes. |
-| Earnings | Secondary Earnings page, linked from Deliveries and Profile: delivered-stop context and sync status. Payout amounts are explicitly unavailable because no earnings API or schema-backed payout data exists. |
-| Wallet and trip history | Earnings shows unavailable balance, base pay, tips, bonus, and instant payout. Delivery history presents an empty ledger state because there is no historical trips or transaction API; no fabricated amounts or statuses are displayed. |
+| Earnings | Secondary Earnings page, linked from Deliveries and Profile: reads balance, earnings totals, adjustments, and recent ledger entries from the driver earnings API. |
+| Wallet and trip history | Earnings displays the wallet and recent finance transactions when available. Payout transfers are not enabled, and there is no historical trip/delivery listing API. |
 | Pickup and scanning | Active Route tab: scrollable customer manifest, scan supported barcodes through the live camera, manually enter a tracking token if needed, and confirm pickup after the manifest is verified. Mismatches use a modal warning. |
 | Navigation and arrival | Active Route tab: route map/directions, exact available stop address, parcel scan, route progress, continuous device GPS when enabled, and a sticky GPS check-in action after the parcel is verified. |
 | Customer communications | Active Route tab exposes customer chat and masked-call presentation only when route status is `in_progress` and that stop's `order_status` is exactly `out_for_delivery` (the schema label for In Transit). Route acceptance does not itself change order status, so the controls remain gated until an authoritative API response reports `out_for_delivery`. Quick replies are compose-only; message sending and masked calls stay disabled until their providers are integrated. |
@@ -49,12 +65,12 @@ Some Figma concepts cannot be connected to the current backend contract and are 
 - Authentication is provided by the centralized Core API session. The PWA does not collect credentials, register accounts, or log out; OTP login, KYC submission, and document verification endpoints are not available.
 - Driver availability is staff-managed. The top-bar indicator reports browser network connectivity, including low signal when the browser exposes that information; shift start/end, vehicle inspection, fuel/charging records, and a driver availability toggle are not available.
 - The route API returns routes already assigned to the driver, not offers. Route accept/reject, payout estimates, parcel-capacity validation, and stop reordering are not part of that contract.
-- Earnings and payout history are not available through the driver API or authoritative schema.
+- Earnings and payout-method APIs and schema-backed finance records are available. Payout requests/transfers and historical trip or delivery listings are not.
 - The route API returns planned and in-progress routes only. Historical delivery, returned-order, and shift-closeout endpoints are not available.
 - Arrival records an explicit GPS check-in; no geofence radius or geofence status is configured. The current POD API accepts photo/signature/name evidence but has no delivery OTP verification contract.
 - Vehicle profiles expose registration/type and capacity measurements for vehicle search; VIN/chassis selection and licence/insurance verification fields are not available.
 - There are no chat, masked-call, customer-note-update notification, dispatcher/support, SOS/incident, reschedule/reattempt, return-handover, or parcel damage/missing-report endpoints in the driver API.
-- There are no route-offer distance/payout, online availability toggle, wallet or instant payout, order-item checklist, OTP verification, masked merchant/courier call, or historical trip-ledger APIs. Browser event names used as integration seams (`driver:order-request`, `driver:customer-note-updated`) are UI hooks only and are not backed by a server push connection.
+- There are no route-offer distance/payout, online availability toggle, payout-transfer, order-item checklist, OTP verification, masked merchant/courier call, or historical trip/delivery listing APIs. Browser event names used as integration seams (`driver:order-request`, `driver:customer-note-updated`) are UI hooks only and are not backed by a server push connection.
 
 These are backend/API compatibility gaps, not frontend fallbacks. Do not add synthetic values or controls that imply those operations succeeded.
 
@@ -64,7 +80,9 @@ The PWA is implemented with HTML, CSS, and JavaScript ES modules:
 
 - `frontend/driver-app/index.html` is the entry page; `css/style.css` contains app styling.
 - `js/app.js` initializes storage, restores the centrally managed Core API session, and wires UI actions.
+- `js/state.js` holds transient route, screen, scan, GPS, and sync state; `js/views.js` selects the active screen and shared navigation.
 - `js/components/` contains the account, navigation, route, dashboard, activity, barcode scanner, and proof-capture views.
+- `js/components/earnings.js` and `js/components/payment-methods.js` display the connected finance ledger and manage masked payout destinations; payout transfers are not available.
 - `js/components/communications.js` contains lifecycle-gated chat/call controls and the customer-note update event handler; message and call providers are integration points, not simulated services.
 - `js/services/account.js` handles profile, vehicle, and account actions; it does not implement login, registration, or logout.
 - `js/services/driver-events.js` handles route actions, location collection, and event synchronization.
@@ -80,7 +98,7 @@ On startup, the PWA checks `GET /auth/me` through Driver Gateway, confirms the `
 
 ### Route maps
 
-An active route displays an embedded Google Maps directions map when a Google Maps Embed API key is configured in Profile → Sync settings. The map uses the warehouse address as its origin and the route stops in sequence as its destination and waypoints. When live GPS sharing is enabled, the active-stop navigation link uses the latest actual device fix as its origin. The key is stored only in that browser's local settings; it is a public browser key, not a secret. Restrict it to the app's website referrer and enable only Maps Embed API in Google Cloud. A Google Cloud billing-enabled project is required. Without a key, the app still offers a direct full-route link to Google Maps. Directions use real addresses from the authenticated driver's assigned route; synthetic order data is not supplied by the app.
+An active route displays an embedded Google Maps directions map when a Google Maps Embed API key is already configured in that browser's local settings. The map uses the warehouse address as its origin and the route stops in sequence as its destination and waypoints. When live GPS sharing is enabled, the active-stop navigation link uses the latest actual device fix as its origin. The key is a browser-visible key, not a secret; restrict it to the app's website referrer and enable only Maps Embed API in Google Cloud. A Google Cloud billing-enabled project is required. The Driver Profile does not expose connection or Maps key settings. Without a key, the app offers a direct full-route link to Google Maps. Directions use real addresses from the authenticated driver's assigned route; synthetic order data is not supplied by the app.
 
 ## Backend and persistence
 
@@ -90,7 +108,7 @@ An active route displays an embedded Google Maps directions map when a Google Ma
 
 ### Core API and database
 
-Core API checks that the user is active, has the `driver` role, and has a driver profile before serving driver operations. It owns all Postgres access and currently uses schema-backed records including `users`, `user_roles`, `drivers`, `vehicles`, `routes`, `route_stops`, `warehouses`, `orders`, and `order_events`. The route manifest returns each assigned parcel's tracking token, contact phone, and available order time window. Delivery notes are not a field in the current schema. The root [`schema.sql`](../schema.sql) is authoritative for table and enum definitions; `db_models/` mirrors it.
+Core API checks that the user is active, has the `driver` role, and has a driver profile before serving driver operations. It owns all Postgres access and uses schema-backed records including `users`, `user_roles`, `drivers`, `vehicles`, `routes`, `route_stops`, `warehouses`, `orders`, and `order_events`. Driver finance additionally uses `driver_wallets`, `driver_earnings`, and `driver_payment_methods`. The route manifest returns each assigned parcel's tracking token, contact phone, and available order time window. Delivery notes are not a field in the current schema. The root [`schema.sql`](../schema.sql) is authoritative for table and enum definitions; `db_models/` mirrors it.
 
 Routing Worker's terminal-event consumer validates route ownership and updates `route_stops`, `orders`, `order_events`, and route/driver status using existing columns and enums. Arrival time is stored in `route_stops.arrived_at`. Redis is an event transport, not the system of record for driver profiles or route assignment. Do not add database access to Gateway or infer new database fields from a frontend screen.
 
@@ -125,8 +143,11 @@ The access cookie is short-lived and scoped to `/`; the refresh cookie is scoped
 | `POST` | `/driver/routes/{route_id}/stops/{order_id}/pod-authorize` | Internal Gateway-to-Core API authorization check for an open stop; no state change. |
 | `POST` | `/driver/events` | Validates an authenticated driver event and publishes it to Redis; this is not a database write. |
 | `POST` | `/driver/pod` | Multipart evidence upload. Core API authorizes the stop, Gateway stores a private MinIO object, and Gateway publishes the object key to Redis. The object key is not persisted against the order. |
+| `GET` | `/driver/earnings` | Reads the driver's wallet balance, earnings totals, and recent ledger transactions. |
+| `GET` / `POST` | `/driver/payment-methods` | Lists masked payout destinations or saves a UPI/bank method encrypted by Core API. |
+| `PUT` | `/driver/payment-methods/{method_id}/preferred` | Selects one of the driver's saved methods as preferred. |
 
-An assigned route is not a route offer: the route must already belong to the authenticated driver. Routes have no rejected/offer status. Vehicles are identified by registration number, not VIN.
+An assigned route is not a route offer: the route must already belong to the authenticated driver. Routes have no rejected/offer status. Vehicles are identified by registration number, not VIN. Finance endpoints are proxied by Driver Gateway to Core API; saved payment methods record a destination only and do not initiate a transfer. See the separate [Driver Gateway Payments quick reference](./driver-gateway-payment-system.md) for finance behavior and setup.
 
 ### Driver event envelopes
 
