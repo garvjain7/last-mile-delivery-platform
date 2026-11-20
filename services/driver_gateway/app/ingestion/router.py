@@ -15,7 +15,7 @@ from minio.error import S3Error
 from urllib3.exceptions import HTTPError as StorageHTTPError
 
 from services.driver_gateway.app.config import config
-from services.driver_gateway.app.driver_api.router import core_api_client
+from services.driver_gateway.app.driver_api.router import _forward_to_core_api, core_api_client
 from services.driver_gateway.app.auth.jwt import verify_driver_jwt
 from services.driver_gateway.app.storage.minio_client import MinIOStorageClient
 from streaming.client import add_to_stream
@@ -32,6 +32,13 @@ router = APIRouter()
 storage_client = MinIOStorageClient()
 MAX_EVIDENCE_BYTES = 5 * 1024 * 1024
 ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp"}
+
+
+@router.get("/events/status")
+async def get_driver_event_status(request: Request):
+    """Proxy commit-status reads to Core API without giving Gateway database access."""
+    return await _forward_to_core_api(request, "driver", "events/status")
+
 
 @router.post("/events", status_code=status.HTTP_202_ACCEPTED)
 async def ingest_driver_event(

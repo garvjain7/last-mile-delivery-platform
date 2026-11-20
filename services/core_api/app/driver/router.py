@@ -5,11 +5,11 @@ from __future__ import annotations
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
-from db_models.models import Driver, Route, RouteStatus, RouteStop, StopStatus, Vehicle
+from db_models.models import Driver, ProcessedEvent, Route, RouteStatus, RouteStop, StopStatus, Vehicle
 from services.core_api.app.database.connection import get_db_session
 from services.core_api.app.driver.dependencies import require_driver
 from services.core_api.app.driver.schemas import (
@@ -18,6 +18,7 @@ from services.core_api.app.driver.schemas import (
     DriverProfileResponse,
     DriverRouteResponse,
     DriverScanValidationRequest,
+    DriverEventStatusResponse,
     RouteAcceptanceResponse,
     VehicleResponse,
 )
@@ -141,6 +142,50 @@ async def get_routes(
     routes = await list_driver_routes(db, user.id)
     locations = await route_location_payload(db, [route.id for route in routes])
     return [route_payload(route, locations.get(route.id)) for route in routes]
+
+
+@router.get("/events/status", response_model=DriverEventStatusResponse)
+async def get_driver_event_status(
+    response: Response,
+    event_id: list[UUID] = Query(..., description="Event UUIDs; repeat this query parameter for each event."),
+    user=Depends(require_driver),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """Return commit status only for events owned by the signed-in driver."""
+    event_ids = list(dict.fromkeys(event_id))
+    if not event_ids or len(event_ids) > 100:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Provide between 1 and 100 event IDs.",
+        )
+    response.headers["Cache-Control"] = "no-store"
+
+    result = await db.scalars(
+        select(ProcessedEvent).where(
+            ProcessedEvent.event_id.in_(event_ids),
+            ProcessedEvent.driver_id == user.id,
+        )
+    )
+    processed = {record.event_id: record for record in result.all()}
+    return {
+        "events": [
+            {
+                "event_id": requested_id,
+                "status": (
+                    processed[requested_id].status
+                    if requested_id in processed and processed[requested_id].status is not None
+                    else "pending"
+                ),
+                "reject_reason": (
+                    processed[requested_id].reject_reason
+                    if requested_id in processed
+                    and processed[requested_id].status == "rejected"
+                    else None
+                ),
+            }
+            for requested_id in event_ids
+        ]
+    }
 
 
 @router.post(

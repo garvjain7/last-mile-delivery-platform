@@ -94,7 +94,7 @@ class DriverRouteStartedEvent(BaseModel):
 
 
 class DriverPackageScannedEvent(BaseModel):
-    """Parcel scan event; Redis transport only under the current schema."""
+    """Parcel scan event; persisted by Routing Worker with its scan stage."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -126,6 +126,16 @@ class DriverPickupConfirmedEvent(BaseModel):
     route_id: UUID
     scanned_order_ids: List[UUID] = Field(min_length=1)
     timestamp: datetime
+
+    @field_validator("scanned_order_ids", mode="before")
+    @classmethod
+    def decode_scanned_order_ids(cls, value):
+        if isinstance(value, str):
+            try:
+                return json.loads(value)
+            except json.JSONDecodeError as exc:
+                raise ValueError("scanned_order_ids must be valid JSON when read from Redis.") from exc
+        return value
 
     @model_validator(mode="after")
     def reject_duplicate_scans(self):

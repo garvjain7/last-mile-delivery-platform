@@ -28,6 +28,7 @@ export const state = {
     locationMode: "off",
     locationStatus: "Location not shared",
     outboxCount: 0,
+    rejectedOutboxCount: 0,
     isSyncing: false,
     syncRequested: false,
     settings: readSettings(),

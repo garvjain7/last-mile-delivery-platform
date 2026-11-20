@@ -1,23 +1,30 @@
-"""Persist supported driver stop events from Redis Streams."""
+"""Persist supported driver events from Redis Streams."""
 
 import asyncio
 import logging
 import socket
 from datetime import datetime, timezone
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from geoalchemy2 import Geometry
 from pydantic import ValidationError
 from redis.exceptions import ResponseError
-from sqlalchemy import cast, func, select
+from sqlalchemy import cast, func, select, update
+from sqlalchemy.dialects.postgresql import insert
 
 from db_models.models import (
+    AttemptOutcome,
+    DeliveryAttempt,
+    DeliveryException,
+    DeliveryProof,
     Driver,
     DriverStatus,
     FailureReason,
     Order,
     OrderEvent,
     OrderStatus,
+    PackageScan,
+    ProcessedEvent,
     Route,
     RouteStatus,
     RouteStop,
@@ -29,8 +36,10 @@ from services.routing_worker.app.earnings import post_delivery_earnings
 from services.routing_worker.app.engines.osrm import OSRMClient
 from streaming.client import close_redis_client, decode_stream_fields, get_redis_client
 from streaming.schemas.events import (
+    DriverEvidenceCapturedEvent,
     DriverPackageScannedEvent,
     DriverPickupConfirmedEvent,
+    DriverRouteStartedEvent,
     DriverTelemetryEvent,
 )
 
@@ -93,7 +102,7 @@ async def _ensure_planned_distance(session, stop: RouteStop, route: Route) -> in
     return stop.planned_distance_m
 
 
-async def apply_terminal_event(session, event: DriverTelemetryEvent) -> None:
+async def apply_terminal_event(session, event: DriverTelemetryEvent) -> tuple[UUID, UUID]:
     """Apply a stop arrival or terminal outcome using only schema-backed fields."""
     result = await session.execute(
         select(RouteStop, Route, Order)
@@ -118,7 +127,7 @@ async def apply_terminal_event(session, event: DriverTelemetryEvent) -> None:
             now = datetime.now(timezone.utc)
             stop.arrived_at = now
             stop.updated_at = now
-        return
+        return route.id, stop.id
 
     desired_stop_status = (
         StopStatus.delivered
@@ -134,7 +143,7 @@ async def apply_terminal_event(session, event: DriverTelemetryEvent) -> None:
     )
     if stop.status in {StopStatus.delivered, StopStatus.failed}:
         if stop.status == desired_stop_status and order.status == desired_order_status:
-            return
+            return route.id, stop.id
         raise InvalidDriverEvent("Stop already has a different terminal outcome.")
     if stop.status != StopStatus.pending:
         raise InvalidDriverEvent("Only pending stops can receive a terminal outcome.")
@@ -145,13 +154,45 @@ async def apply_terminal_event(session, event: DriverTelemetryEvent) -> None:
 
     now = datetime.now(timezone.utc)
     stop.status = desired_stop_status
-    stop.failure_reason = (
+    failure_reason = (
         FailureReason(event.failure_reason)
+        if event.event_type == "delivery.failed"
+        else None
+    )
+    stop.failure_reason = failure_reason
+    stop.failure_notes = (
+        event.failure_notes
         if event.event_type == "delivery.failed"
         else None
     )
     stop.completed_at = now
     stop.updated_at = now
+    session.add(
+        DeliveryAttempt(
+            order_id=order.id,
+            route_stop_id=stop.id,
+            driver_id=event.driver_id,
+            outcome=(
+                AttemptOutcome.delivered
+                if event.event_type == "delivery.completed"
+                else AttemptOutcome.failed
+            ),
+            failure_reason=failure_reason,
+            client_event_id=event.event_id,
+            occurred_at=now,
+        )
+    )
+    if event.event_type == "delivery.failed":
+        session.add(
+            DeliveryException(
+                route_id=route.id,
+                order_id=order.id,
+                driver_id=event.driver_id,
+                failure_reason=failure_reason,
+                notes=event.failure_notes,
+                return_to_hub=event.return_to_hub,
+            )
+        )
     if order.status != desired_order_status:
         session.add(
             OrderEvent(
@@ -196,16 +237,16 @@ async def apply_terminal_event(session, event: DriverTelemetryEvent) -> None:
         if driver is not None and driver.status == DriverStatus.on_route:
             driver.status = DriverStatus.available
             driver.updated_at = now
+    return route.id, stop.id
 
 
-async def validate_nonterminal_event(session, fields: dict[str, str]) -> None:
-    """Validate stream-only scan and pickup events against the assigned route."""
+async def validate_nonterminal_event(session, fields: dict[str, str]) -> tuple[UUID, UUID | None]:
+    """Validate and persist scan or pickup events against the assigned route."""
     event_type = fields.get("event_type")
     if event_type == "package.scanned":
         event = DriverPackageScannedEvent.model_validate(fields)
-        matching_stops = await session.scalar(
-            select(func.count())
-            .select_from(RouteStop)
+        stop = await session.scalar(
+            select(RouteStop)
             .join(Route, RouteStop.route_id == Route.id)
             .join(Order, RouteStop.order_id == Order.id)
             .where(
@@ -216,23 +257,131 @@ async def validate_nonterminal_event(session, fields: dict[str, str]) -> None:
                 RouteStop.status == StopStatus.pending,
                 Order.tracking_token == event.tracking_token,
             )
+            .with_for_update()
         )
-        if matching_stops != 1:
+        if stop is None:
             raise InvalidDriverEvent("Scanned parcel is not an open stop on the assigned route.")
+        session.add(
+            PackageScan(
+                route_id=event.route_id,
+                route_stop_id=stop.id,
+                order_id=stop.order_id,
+                driver_id=event.driver_id,
+                event_type=event.event_type,
+                stage=event.scan_stage,
+                tracking_token=event.tracking_token,
+                is_valid=True,
+                scanned_at=event.timestamp,
+            )
+        )
+        return event.route_id, stop.id
     elif event_type == "pickup.confirmed":
         event = DriverPickupConfirmedEvent.model_validate(fields)
-        assigned_orders = await session.scalars(
-            select(RouteStop.order_id)
+        result = await session.execute(
+            select(RouteStop.id, RouteStop.order_id, Order.tracking_token)
             .join(Route, RouteStop.route_id == Route.id)
+            .join(Order, RouteStop.order_id == Order.id)
             .where(
                 Route.id == event.route_id,
                 Route.driver_id == event.driver_id,
                 Route.status == RouteStatus.in_progress,
                 RouteStop.status == StopStatus.pending,
             )
+            .with_for_update()
         )
-        if set(assigned_orders.all()) != set(event.scanned_order_ids):
+        stops = result.all()
+        if {order_id for _, order_id, _ in stops} != set(event.scanned_order_ids):
             raise InvalidDriverEvent("Pickup confirmation does not cover the route manifest.")
+        for route_stop_id, order_id, tracking_token in stops:
+            session.add(
+                PackageScan(
+                    route_id=event.route_id,
+                    route_stop_id=route_stop_id,
+                    order_id=order_id,
+                    driver_id=event.driver_id,
+                    event_type=event.event_type,
+                    stage="pickup",
+                    tracking_token=tracking_token,
+                    is_valid=True,
+                    scanned_at=event.timestamp,
+                )
+            )
+        return event.route_id, None
+    raise InvalidDriverEvent("Unsupported scan or pickup event type.")
+
+
+async def _persist_pod_evidence(
+    session,
+    fields: dict[str, str],
+) -> tuple[UUID, UUID]:
+    event = DriverEvidenceCapturedEvent.model_validate(fields)
+    if event.event_type != "pod.captured":
+        raise InvalidDriverEvent("Exception evidence is not supported by the POD evidence record.")
+    if event.evidence_type not in {"photo", "signature"}:
+        raise InvalidDriverEvent("Recipient-name evidence cannot be stored as photo or signature evidence.")
+
+    stop = await session.scalar(
+        select(RouteStop)
+        .join(Route, RouteStop.route_id == Route.id)
+        .where(
+            Route.id == event.route_id,
+            Route.driver_id == event.driver_id,
+            Route.status == RouteStatus.in_progress,
+            RouteStop.order_id == event.order_id,
+            RouteStop.status == StopStatus.pending,
+        )
+        .with_for_update()
+    )
+    if stop is None:
+        raise InvalidDriverEvent("Evidence does not identify an open stop on the driver's active route.")
+    session.add(
+        DeliveryProof(
+            route_id=event.route_id,
+            route_stop_id=stop.id,
+            order_id=event.order_id,
+            driver_id=event.driver_id,
+            proof_type=event.evidence_type,
+            object_key=event.object_key,
+            captured_at=event.timestamp,
+        )
+    )
+    return event.route_id, stop.id
+
+
+async def _persist_route_started(session, fields: dict[str, str]) -> tuple[UUID, None]:
+    event = DriverRouteStartedEvent.model_validate(fields)
+    route_id = await session.scalar(
+        select(Route.id).where(
+            Route.id == event.route_id,
+            Route.driver_id == event.driver_id,
+            Route.status == RouteStatus.in_progress,
+        )
+    )
+    if route_id is None:
+        raise InvalidDriverEvent("Route-start event does not match the driver's active route.")
+    return event.route_id, None
+
+
+async def _apply_driver_event(session, fields: dict[str, str]) -> tuple[UUID | None, UUID | None]:
+    """Apply one supported event and return its verified route/stop context."""
+    event_type = fields.get("event_type")
+    if event_type in {"package.scanned", "pickup.confirmed"}:
+        return await validate_nonterminal_event(session, fields)
+    if event_type in {"pod.captured", "delivery.exception.evidence"}:
+        return await _persist_pod_evidence(session, fields)
+    if event_type == "route.started":
+        return await _persist_route_started(session, fields)
+    if event_type in {
+        "driver.location.updated",
+        "stop.arrived",
+        "delivery.completed",
+        "delivery.failed",
+    }:
+        event = DriverTelemetryEvent.model_validate(fields)
+        if event.event_type == "driver.location.updated":
+            return None, None
+        return await apply_terminal_event(session, event)
+    raise InvalidDriverEvent("Unsupported driver event type.")
 
 
 async def _acknowledge(redis_client, message_id: str) -> None:
@@ -241,41 +390,60 @@ async def _acknowledge(redis_client, message_id: str) -> None:
 
 async def _process_message(redis_client, message_id: str, raw_fields: dict[str, str]) -> None:
     fields = decode_stream_fields(raw_fields)
-    event_type = fields.get("event_type")
-    if event_type in {"package.scanned", "pickup.confirmed"}:
-        try:
-            async with async_session_factory() as session:
-                await validate_nonterminal_event(session, fields)
-            await _acknowledge(redis_client, message_id)
-        except (ValidationError, InvalidDriverEvent):
-            logger.exception("Acknowledging invalid scan or pickup event %s", message_id)
-            await _acknowledge(redis_client, message_id)
-        return
-    if event_type not in {"delivery.completed", "delivery.failed", "stop.arrived"}:
-        logger.debug("Acknowledging non-persistence driver event %s (%s)", message_id, event_type)
+    try:
+        event_id = UUID(fields["event_id"])
+        driver_id = UUID(fields["driver_id"])
+        event_type = fields["event_type"]
+    except (KeyError, ValueError, TypeError):
+        logger.warning("Acknowledging driver event %s without a valid receipt identity.", message_id)
         await _acknowledge(redis_client, message_id)
         return
 
-    try:
-        event = DriverTelemetryEvent.model_validate(fields)
-    except ValidationError:
-        logger.exception("Acknowledging invalid driver event %s", message_id)
-        await _acknowledge(redis_client, message_id)
-        return
-
-    try:
-        async with async_session_factory() as session:
-            await apply_terminal_event(session, event)
-            await session.commit()
-    except InvalidDriverEvent:
-        logger.exception(
-            "Acknowledging unauthorized or stale driver event %s for route %s order %s",
-            message_id,
-            event.current_route_id,
-            event.order_id,
+    async with async_session_factory() as session:
+        claim = await session.execute(
+            insert(ProcessedEvent)
+            .values(
+                event_id=event_id,
+                event_type=event_type,
+                driver_id=driver_id,
+                status="rejected",
+                reject_reason="Event processing did not complete.",
+            )
+            .on_conflict_do_nothing(index_elements=[ProcessedEvent.event_id])
+            .returning(ProcessedEvent.event_id)
         )
-        await _acknowledge(redis_client, message_id)
-        return
+        claimed_event_id = claim.scalar_one_or_none()
+        if claimed_event_id is None:
+            logger.info("Skipping previously processed driver event %s", event_id)
+        else:
+            route_id = None
+            route_stop_id = None
+            try:
+                route_id, route_stop_id = await _apply_driver_event(session, fields)
+            except ValidationError as exc:
+                reject_reason = "; ".join(
+                    error["msg"]
+                    for error in exc.errors(include_input=False, include_context=False)
+                ) or "Invalid driver event."
+                final_status = "rejected"
+            except InvalidDriverEvent as exc:
+                reject_reason = str(exc)
+                final_status = "rejected"
+            else:
+                reject_reason = None
+                final_status = "committed"
+
+            await session.execute(
+                update(ProcessedEvent)
+                .where(ProcessedEvent.event_id == event_id)
+                .values(
+                    status=final_status,
+                    reject_reason=reject_reason,
+                    route_id=route_id,
+                    route_stop_id=route_stop_id,
+                )
+            )
+            await session.commit()
 
     await _acknowledge(redis_client, message_id)
 
@@ -294,7 +462,7 @@ async def _ensure_consumer_group(redis_client) -> None:
 
 
 async def run_terminal_events_consumer() -> None:
-    """Read, persist, then acknowledge driver stop events with at-least-once delivery."""
+    """Read, persist, then acknowledge driver events with at-least-once delivery."""
     redis_client = await get_redis_client()
     await _ensure_consumer_group(redis_client)
     logger.info(

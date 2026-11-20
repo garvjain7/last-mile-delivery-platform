@@ -99,7 +99,7 @@ export function earningsView() {
         </section>
         <section class="activity-summary earnings-sync">
             <span class="activity-summary-icon">↻</span>
-            <div><strong>${state.outboxCount ? `${state.outboxCount} item${state.outboxCount === 1 ? "" : "s"} waiting to sync` : "Activity is synced"}</strong><small>Driver events are stored locally before sync.</small></div>
+            <div><strong>${state.outboxCount ? `${state.outboxCount} item${state.outboxCount === 1 ? "" : "s"} on device${state.rejectedOutboxCount ? ` · ${state.rejectedOutboxCount} rejected` : ""}` : "Activity is synced"}</strong><small>Gateway acceptance and server commit are separate steps.</small></div>
             <button class="button button-secondary button-small" data-action="sync">Sync</button>
         </section>
         <button class="text-button earnings-activity-link" data-tab="Activity">View activity history <span>→</span></button>`;

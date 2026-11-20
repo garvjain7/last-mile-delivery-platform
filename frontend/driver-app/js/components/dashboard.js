@@ -69,7 +69,7 @@ export function todayView() {
         </section>` : ""}
         ${state.route ? `<div class="section-heading"><div><p class="eyebrow">PICK UP WHERE YOU LEFT OFF</p><h3>Active route</h3></div><button class="text-button" data-tab="Route">Open route <span>→</span></button></div>
             ${routeSummary(state.route, "Continue")}
-            <div class="home-quick-actions"><button data-action="start-location"><span aria-hidden="true">⌖</span><strong>Share location</strong><small>GPS check-in</small></button><button data-action="sync"><span aria-hidden="true">↻</span><strong>Sync activity</strong><small>${state.outboxCount} waiting</small></button></div>
+            <div class="home-quick-actions"><button data-action="start-location"><span aria-hidden="true">⌖</span><strong>Share location</strong><small>GPS check-in</small></button><button data-action="sync"><span aria-hidden="true">↻</span><strong>Sync activity</strong><small>${state.outboxCount} on device${state.rejectedOutboxCount ? ` · ${state.rejectedOutboxCount} rejected` : ""}</small></button></div>
         ` : `
             <div class="section-heading"><div><p class="eyebrow">YOUR ASSIGNED WORK</p><h3>Planned routes</h3></div><span class="count-pill">${availableRoutes.length} assigned</span></div>
             ${availableRoutes.length

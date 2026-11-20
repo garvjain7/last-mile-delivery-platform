@@ -185,7 +185,7 @@ export function activeRouteView() {
                 <div class="scan-progress" role="status"><strong>${pickupCount} of ${route.stops.length} parcels scanned</strong><span class="queue-state">${navigator.onLine ? "ONLINE CHECK" : "OFFLINE CHECK"}</span></div>
                 <button class="button button-secondary button-wide" data-action="scan-pickup">Scan next parcel <span>⌖</span></button>
                 <button class="button button-primary button-wide" data-action="confirm-pickup" ${manifestComplete ? "" : "disabled"}>Confirm pickup <span>→</span></button>
-                <p class="field-hint">Scans are verified against your route manifest. Scan history is queued to Redis, not saved as a database record.</p>
+                <p class="field-hint">Scans are verified against your route manifest. Gateway queues scan history in Redis; it appears in the saved route history after server commit.</p>
                 <ol class="pickup-manifest" aria-label="Pickup manifest">
                     ${route.stops.map((stop) => `<li class="${state.pickupScanned.has(stop.order_id) ? "is-scanned" : ""}">
                         <span class="manifest-check" aria-hidden="true">${state.pickupScanned.has(stop.order_id) ? "✓" : "○"}</span>

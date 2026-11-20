@@ -119,6 +119,16 @@ class DriverScanValidationRequest(BaseModel):
         return self
 
 
+class DriverEventStatusItem(BaseModel):
+    event_id: UUID
+    status: Literal["committed", "rejected", "pending"]
+    reject_reason: Optional[str] = None
+
+
+class DriverEventStatusResponse(BaseModel):
+    events: list[DriverEventStatusItem]
+
+
 class PaymentMethodCreate(BaseModel):
     method_type: Literal["upi", "bank_account"]
     upi_id: Optional[SecretStr] = None

@@ -95,6 +95,7 @@ function clearDriverSessionState() {
     state.locationMode = "off";
     state.locationStatus = "Location not shared";
     state.outboxCount = 0;
+    state.rejectedOutboxCount = 0;
     state.isSyncing = false;
     state.syncRequested = false;
     state.driverProfile = null;

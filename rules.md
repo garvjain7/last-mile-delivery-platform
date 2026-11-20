@@ -26,8 +26,9 @@ The Gateway's declared routes and mounts are:
 | `GET` | `/driver-app-sw.js` | Service worker, served with `Service-Worker-Allowed: /` |
 | `GET` | `/static/driver-app/css/*`, `/static/driver-app/js/*` | Driver app static assets |
 | `GET` | `/static/shared/js/*` | Shared static JavaScript |
-| `GET` | `/health/live`, `/health/ready` | Gateway health endpoints; readiness is currently a static response and does not verify dependencies |
+| `GET` | `/health/live`, `/health/ready` | Gateway liveness and Redis/MinIO dependency readiness checks |
 | `POST` | `/driver/events` | Validate a driver event and append it to Redis |
+| `GET` | `/driver/events/status` | Proxy driver-scoped commit status from Core API |
 | `POST` | `/driver/pod` | Authorize and upload delivery/exception evidence |
 | `GET`, `POST` | `/auth/{path}` | Allowlisted Core API auth proxy |
 | `GET`, `POST`, `PUT`, `PATCH`, `DELETE` | `/driver/{path}` | Allowlisted Core API driver API proxy |
@@ -36,7 +37,7 @@ Do not confuse a standalone service URL with a mounted/unified application path.
 
 The Gateway proxy forwards only `Accept`, `Authorization`, `Content-Type`, and `Cookie` request headers. It forwards selected response headers (`Cache-Control`, `Content-Disposition`, `Content-Type`, `ETag`, `Last-Modified`, `Location`) and preserves `Set-Cookie`. It forwards query parameters and request bodies to Core API, uses a 15-second timeout (5-second connect timeout), and does not follow redirects. Unlisted endpoints return `404`; do not assume the proxy is a general reverse proxy.
 
-Allowlisted auth operations are `GET /auth/me` and `POST /auth/forgot-password`, `/auth/login`, `/auth/logout`, `/auth/refresh`, `/auth/register/driver`, and `/auth/reset-password`. Allowlisted driver operations are `GET /driver/profile`, `/driver/vehicles`, `/driver/routes`; `PATCH /driver/profile`; `PUT /driver/vehicle`; and `POST /driver/routes/{route_id}/accept`, `/driver/routes/{route_id}/scan`, and `/driver/routes/{route_id}/stops/{order_id}/pod-authorize`. Route and order path identifiers for these special routes must be UUIDs.
+Allowlisted auth operations are `GET /auth/me` and `POST /auth/forgot-password`, `/auth/login`, `/auth/logout`, `/auth/refresh`, `/auth/register/driver`, and `/auth/reset-password`. Allowlisted driver operations are `GET /driver/profile`, `/driver/vehicles`, `/driver/routes`, and `/driver/events/status`; `PATCH /driver/profile`; `PUT /driver/vehicle`; and `POST /driver/routes/{route_id}/accept`, `/driver/routes/{route_id}/scan`, and `/driver/routes/{route_id}/stops/{order_id}/pod-authorize`. Route and order path identifiers for these special routes must be UUIDs.
 
 ### 1.2 Browser authentication handshake
 
@@ -131,7 +132,9 @@ Coordinates must be within latitude `[-90, 90]` and longitude `[-180, 180]`. `fa
 
 `POST /driver/pod` is multipart form data, not JSON. Required fields: `event_id`, `route_id`, `order_id`, `evidence_type` (`photo`, `signature`, `recipient_name`), and `purpose` (`pod`, `exception`). Optional fields: `recipient_name` (max 120 chars) and `file`. Photo/signature accepts JPEG, PNG, or WebP up to 5 MiB; recipient-name evidence requires a non-empty name and stores JSON metadata. Gateway authorizes the open stop via Core API, stores private evidence in MinIO, then emits a Gateway-generated `pod.captured` or `delivery.exception.evidence` event. Success is `202` with `{ "status", "event_id", "object_key", "persisted_with_order": false }`. Errors include `401`, upstream authorization status, `413`, `415`, `422`, `502`, `503`, or `504` as applicable.
 
-Redis acceptance is not evidence of a committed delivery outcome. Scans/pickup confirmations are stream-only; evidence object keys are not linked to an order in Postgres; the current schema has no durable event-ID deduplication table. Check `docs/CURRENT_STATE.md` and the actual worker consumer code before representing downstream persistence as operational.
+Redis acceptance is not evidence of a committed delivery outcome. The app polls `GET /driver/events/status?event_id=<uuid>` through the Gateway proxy; Core API returns `committed`, `rejected` plus a reason, or `pending`, scoped to the signed-in driver. Routing Worker records each supported event result in `processed_events` in the same transaction as its domain writes, then acknowledges Redis. Replayed UUIDs are skipped. Location receipts do not persist coordinates.
+
+Routing Worker persists package scans and per-stop pickup confirmations in `package_scans`, POD photo/signature keys in `delivery_proof`, terminal outcomes in `delivery_attempts`, and failed-delivery details in `delivery_exceptions` plus the compatibility `route_stops.failure_notes` field. The schema does not model exception-evidence purpose or recipient-name-only evidence; those events are rejected rather than reported as committed. The status endpoint returns `pending` for unknown IDs and IDs belonging to another driver.
 
 ### 1.5 Real time and navigation
 
@@ -266,7 +269,7 @@ Current backend dependencies are pinned or constrained in the root [requirements
 
 4. **Pickup and scans**
    - Use supported barcode detection or manual token entry. Verify a scanned token against the active route manifest; online, also call the route scan-validation endpoint.
-   - Queue `package.scanned` events with stage `pickup` or `stop`. Scans are not persisted as scan rows in the current database schema.
+   - Queue `package.scanned` events with stage `pickup` or `stop`. Routing Worker validates and persists accepted scan events in `package_scans` with their stage.
    - Require every route parcel to be scanned before enabling pickup confirmation. Queue `pickup.confirmed` with the full unique list of route order UUIDs.
    - Require pickup confirmation before delivery actions. Local progress is a client workflow guard, not a substitute for backend validation.
 
@@ -279,7 +282,7 @@ Current backend dependencies are pinned or constrained in the root [requirements
    - Supported evidence choices are a photo, drawn signature, or recipient name. Optional recipient name may accompany a file. There is no delivery OTP.
    - Evidence must be placed in the local outbox and uploaded via multipart `/driver/pod` when syncing. Gateway authorizes the driver/route/open stop and stores evidence in private MinIO.
    - Queue the evidence event before `delivery.completed`; the ordered outbox must replay in order. Completion requires an explicit GPS fix and includes coordinates.
-   - The app may show a queued/local state immediately, but only server acceptance confirms Gateway ingestion. Do not claim the evidence reference is persisted with the order: current API response says `persisted_with_order: false`.
+   - The app may show a queued/local state immediately, but only server acceptance confirms Gateway ingestion. The evidence key is linked to its route stop/order only after Routing Worker commits the corresponding event; the upload response's `persisted_with_order: false` describes the earlier upload stage.
 
 7. **Exceptions**
    - Supported failure reasons are `recipient_unavailable`, `wrong_address`, `refused`, and `other`; optional notes are limited to 500 characters; optional photo is allowed; return-to-hub is a boolean event field.
@@ -289,19 +292,21 @@ Current backend dependencies are pinned or constrained in the root [requirements
 
 8. **Offline sync and completion**
    - Save actions to IndexedDB before attempting network sync. Each item has a stable event UUID, timestamp, driver account binding, and monotonically increasing local queue sequence.
-   - Replay only records belonging to the currently authenticated driver, in queue order, one at a time. Stop on the first failure and retain the failed and later records. Never treat a network send as successful before an HTTP success response and local queue deletion.
+   - Replay only records belonging to the currently authenticated driver, in queue order, one at a time. Stop sending new records on the first Gateway failure and retain the failed and later records. A successful Gateway response changes the local record to `awaiting_commit`; it is not deleted.
+   - Poll `GET /driver/events/status` for remotely accepted event IDs. Delete only `committed` records; retain `rejected` records with their reason and show a visible warning. Treat missing/`pending` statuses and status-service errors as unresolved, never as success.
    - On reconnect, attempt sync and expose pending count/status. Do not send queued records under a different account. Preserve records belonging to another account and warn the user.
    - Route finish is not a separate route-complete API: first sync pending events, then re-fetch routes and treat the route as complete only after it is absent from the returned active list.
 
 ### 4.2 Invariants and explicitly absent features
 
 - Core API is the only service with Postgres access for driver self-service. Gateway, browser, simulator, and Control Tower must not receive database utilities.
-- Gateway's `202 Accepted` means validated Redis append, not durable delivery-state persistence or guaranteed downstream completion.
+- Gateway's `202 Accepted` means validated Redis append, not durable delivery-state persistence or guaranteed downstream completion. The Core API status read is the authoritative commit/rejection signal.
 - Route IDs/order IDs are internal identifiers for API/event payloads; do not show internal UUIDs as user-facing labels when a tracking token, recipient, or route label is sufficient.
 - Preserve exact field names and enum values across API, event schema, browser model, and tests. Do not fabricate missing business fields or success data.
 - Orders, route stops, and driver status must follow the actual database schema and driver route API, not stale PRD domain-model shorthand.
-- Not supported: shift toggles; route offer accept/reject/timeouts; payout or earnings amounts; OTP; KYC; geofences; continuous/background location; historical delivery API; durable scan/pickup records; evidence references persisted against orders; durable event UUID deduplication; notifications/chat/SOS; reattempt/reschedule; physical return custody.
-- `docs/PRD.md`, `docs/architecture.md`, `AGENTS.md`, `docs/API_CONTRACTS.md`, `docs/CURRENT_STATE.md`, and `docs/driver-app.md` have differences in age and scope. In particular, do not implement Kafka, `processed_event`, or `delivery_attempt` just because an older description mentions them. For database shape use root `schema.sql`; for runtime contract inspect the actual route/schema code; for current operational status use verified current code and tests. When sources still conflict, surface the open question instead of silently choosing a plausible behavior.
+- Before adding a database table, inspect the live database, `schema.sql`, and shared ORM models for an existing table that can represent the same data. Prefer reusing or extending a suitable table; add a new table only when reuse would lose required semantics or integrity. Preserve existing rows during migrations, and never drop an existing table without explicit user approval.
+- Not supported: shift toggles; route offer accept/reject/timeouts; payout or earnings amounts; OTP; KYC; geofences; raw continuous/background GPS history; historical delivery API; exception-evidence purpose tracking; recipient-name-only evidence persistence; notifications/chat/SOS; reattempt/reschedule; physical return custody.
+- `docs/PRD.md` and `docs/architecture.md` may describe older or broader behavior. Do not implement Kafka, the legacy singular `processed_event` table, or `delivery_attempt`. This app's current persistence contract uses `processed_events` as explicitly defined in `schema.sql`; for database shape use root `schema.sql`, for runtime contract inspect actual route/schema code, and for current operational status use verified code and tests. When sources still conflict, surface the open question instead of silently choosing a plausible behavior.
 
 ## 5. File Management & Folder Architecture
 

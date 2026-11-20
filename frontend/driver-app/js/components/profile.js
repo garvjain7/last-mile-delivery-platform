@@ -53,7 +53,7 @@ export function profileView() {
         <button class="button button-secondary" data-action="save-driver-profile" type="button">Save profile changes</button>
         ${paymentMethodsView()}
         <button class="profile-link-card" data-tab="Earnings"><span class="activity-summary-icon">₹</span><span><strong>Earnings &amp; wallet</strong><small>View balance and transaction history</small></span><b>→</b></button>
-        <button class="profile-link-card" data-tab="Activity"><span class="activity-summary-icon">↻</span><span><strong>Activity & offline sync</strong><small>${state.outboxCount ? `${state.outboxCount} item${state.outboxCount === 1 ? "" : "s"} waiting` : "View recent driver actions"}</small></span><b>→</b></button>
+        <button class="profile-link-card" data-tab="Activity"><span class="activity-summary-icon">↻</span><span><strong>Activity & offline sync</strong><small>${state.outboxCount ? `${state.outboxCount} item${state.outboxCount === 1 ? "" : "s"} on device${state.rejectedOutboxCount ? ` · ${state.rejectedOutboxCount} rejected` : ""}` : "View recent driver actions"}</small></span><b>→</b></button>
         <button class="button button-secondary signout-button" data-action="logout-driver-app" type="button">Log out of driver app</button>
         `;
 }

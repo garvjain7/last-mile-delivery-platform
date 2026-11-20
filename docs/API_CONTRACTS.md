@@ -109,6 +109,12 @@ Admin page URLs are `GET /admin`, `/admin/drivers`, `/admin/users`, `/admin/merc
 | GET | `/health/live` | Process liveness only. |
 | GET | `/health/ready` | Checks Core API Postgres and Redis dependencies; returns `503` when either check fails. |
 
+### Driver event status
+
+| Method | Path | Access | Contract |
+| --- | --- | --- | --- |
+| GET | `/driver/events/status?event_id=<uuid>` | Active driver session | Accepts 1–100 repeated `event_id` query parameters and returns one item per requested ID with `committed`, `rejected` plus `reject_reason`, or `pending`. Results are scoped to the signed-in driver; unknown or another driver's IDs appear as `pending`. Responses are not cacheable. |
+
 ## 2. Control Tower API
 
 | Method | Path | Access | Current behavior |
@@ -134,14 +140,16 @@ never sent as driver telemetry.
 
 The PWA may authenticate event ingestion with the signed-in `access_token`
 HttpOnly cookie; non-browser clients may use a Bearer JWT. Gateway acceptance
-means Redis append only. It does not persist delivery outcomes, PODs, scans, or
-returns in Postgres.
+means Redis append only. Gateway remains Postgres-free; `GET /driver/events/status`
+proxies the driver's cookie/Bearer session to Core API, which reads
+`processed_events`.
 
 | Method | Path | Access | Current behavior |
 | --- | --- | --- | --- |
 | POST | `/driver/events` | Driver client; Bearer HS256 JWT with `driver` role | Validates driver event payloads and appends them to `driver_events_stream`; driver identity comes from the token. Includes `route.started` when a driver starts an assigned route (`out_for_delivery`). |
+| GET | `/driver/events/status?event_id=<uuid>` | Driver session | Proxies up to 100 event IDs to Core API; returns `committed`, `rejected` with reason, or `pending`, scoped to the authenticated driver. |
 | GET | `/health/live` | Public | Process liveness. |
-| GET | `/health/ready` | Public | Currently returns a static ready response; Redis and MinIO are not checked yet. |
+| GET | `/health/ready` | Public | Pings Redis and checks access to the configured MinIO evidence bucket; returns `503` if either check fails. |
 
 In the unified app, Driver Gateway is mounted at `/driver`; its child API route is therefore `/driver/driver/events` there. When run as its own service, the route is `/driver/events`.
 
@@ -163,8 +171,8 @@ The following distinguishes implemented processing from remaining platform work:
 
 1. **Implemented:** `POST /orders/` and `POST /api/users/{user_id}/request` validate order data, geocode the delivery address, persist a `placed` order with no warehouse and its initial `order_events` row, then publish `order.created` to `orders_stream`. The merchant handoff later selects a warehouse; its eligibility policy remains unresolved. The end-to-end lifecycle in `docs/end-to-end-system-flow.md` is authoritative for stage ordering.
 2. Routing Worker consumes orders through a Redis consumer group, obtains travel costs from OSRM, sends routing/capacity/time-window input to VROOM, persists routes and stops, publishes route updates, and acknowledges an order only after its database write commits.
-3. **Implemented for the Driver PWA:** Gateway authenticates drivers, validates location, arrival, package-scan, pickup, completion, and failure events, and publishes them to `driver_events_stream`. POD/exception evidence uploads are authorized by Core API and stored in MinIO before their object key is published. Scan/pickup records and evidence references are not persisted in Postgres under the current schema.
+3. **Implemented for the Driver PWA:** Gateway authenticates drivers, validates location, arrival, package-scan, pickup, completion, and failure events, and publishes them to `driver_events_stream`. POD/exception evidence uploads are authorized by Core API and stored in MinIO before their object key is published. Gateway's event-status endpoint proxies to Core API and does not access Postgres.
 4. Control Tower consumes live driver events into Redis Hash state and broadcasts changed state to `/ws/fleet` clients. Rescue requests should ask Routing Worker to re-solve only the affected vehicle's remaining stops.
-5. **Implemented:** Routing Worker validates stop ownership, updates `route_stops`, `orders`, `order_events`, and route/driver state for arrival and terminal outcomes, commits, then acknowledges. Terminal state transitions prevent duplicate status-history writes on replay. The authoritative schema has no `delivery_attempt` or `processed_event` table, so event UUIDs are not durably deduplicated and evidence object keys are not retained in Postgres.
+5. **Implemented:** Routing Worker validates driver events, persists scans and pickup confirmations to `package_scans`, links supported POD photo/signature keys in `delivery_proof`, records terminal outcomes in `delivery_attempts`, and stores failure details in `delivery_exceptions`. It also updates `route_stops`, `orders`, `order_events`, and route/driver state, then writes a committed or rejected `processed_events` receipt in the same transaction before acknowledging Redis. Duplicate event UUIDs are skipped. Location receipts do not store coordinates. Unsupported exception-evidence and recipient-name-only events receive an explicit rejected status.
 
 Shared status and event enum definitions are in `db_models/models.py` and `streaming/schemas/`; `schema.sql` is authoritative for database types and constraints.

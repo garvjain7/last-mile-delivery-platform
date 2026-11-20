@@ -77,5 +77,5 @@ export function deliveriesView() {
             <div class="empty-state delivery-empty"><span>▤</span><h3>No active delivery manifest</h3><p>Assigned route stops will appear here when a route is in progress.</p><button class="button button-primary" data-tab="Routes">View routes <span>→</span></button></div>
         `}
         <button class="profile-link-card" data-tab="Earnings"><span class="activity-summary-icon">₹</span><span><strong>Earnings &amp; wallet</strong><small>View available balance and transactions</small></span><b>→</b></button>
-        <button class="profile-link-card" data-tab="Activity"><span class="activity-summary-icon">↻</span><span><strong>Offline activity & sync</strong><small>${state.outboxCount ? `${state.outboxCount} item${state.outboxCount === 1 ? "" : "s"} waiting to sync` : "View pending device activity"}</small></span><b>→</b></button>`;
+        <button class="profile-link-card" data-tab="Activity"><span class="activity-summary-icon">↻</span><span><strong>Offline activity & sync</strong><small>${state.outboxCount ? `${state.outboxCount} item${state.outboxCount === 1 ? "" : "s"} on device${state.rejectedOutboxCount ? ` · ${state.rejectedOutboxCount} rejected` : ""}` : "View pending device activity"}</small></span><b>→</b></button>`;
 }

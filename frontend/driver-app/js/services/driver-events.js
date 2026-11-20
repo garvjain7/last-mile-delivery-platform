@@ -10,14 +10,17 @@ import { render } from "../views.js";
 import { routeMap } from "../components/routes.js";
 import { scanBarcode, showScanWarning } from "../components/scanner.js";
 import { captureException, captureProofOfDelivery } from "../components/pod.js";
+import { applyEventCommitStatuses } from "./driver-event-status.mjs";
 
 const LOCATION_TELEMETRY_INTERVAL_MS = 30_000;
 const LOCATION_TELEMETRY_MIN_DISTANCE_M = 50;
 const DEMO_TRAVEL_DURATION_MS = 20_000;
 const LOCATION_RENDER_INTERVAL_MS = 5_000;
+const COMMIT_STATUS_POLL_INTERVAL_MS = 5_000;
 
 let locationWatchId = null;
 let demoLocationTimer = null;
+let commitStatusPollTimer = null;
 let lastLocationEventAt = 0;
 let lastLocationEvent = null;
 let lastLocationRenderAt = 0;
@@ -210,6 +213,58 @@ export async function recordTelemetry(eventType, details = {}, attachment = null
     }, attachment);
 }
 
+function scheduleCommitStatusPoll() {
+    if (commitStatusPollTimer !== null) return;
+    commitStatusPollTimer = window.setTimeout(() => {
+        commitStatusPollTimer = null;
+        void syncOutbox({ quiet: true }).catch((error) => {
+            console.error("Could not poll driver event commit status.", error);
+            notify("Server commit status could not be checked. Events remain on this device.", "warning");
+        });
+    }, COMMIT_STATUS_POLL_INTERVAL_MS);
+}
+
+function cancelCommitStatusPoll() {
+    if (commitStatusPollTimer === null) return;
+    window.clearTimeout(commitStatusPollTimer);
+    commitStatusPollTimer = null;
+}
+
+async function pollAwaitingCommitEvents() {
+    const records = await outboxTransaction("readonly", (store) => store.getAll());
+    const awaiting = records.filter((record) => (
+        record.driver_user_id === state.driverUserId
+        && record.sync_status === "awaiting_commit"
+    ));
+    if (!awaiting.length) {
+        cancelCommitStatusPoll();
+        return { committed: 0, rejected: 0 };
+    }
+
+    let committed = 0;
+    let rejected = 0;
+    for (let offset = 0; offset < awaiting.length; offset += 100) {
+        const batch = awaiting.slice(offset, offset + 100);
+        const query = new URLSearchParams();
+        batch.forEach((record) => query.append("event_id", record.event_id));
+        const response = await apiRequest(`/driver/events/status?${query.toString()}`);
+        const result = await applyEventCommitStatuses(batch, response.events, outboxTransaction);
+        committed += result.committed;
+        rejected += result.rejected;
+    }
+
+    const remaining = await outboxTransaction("readonly", (store) => store.getAll());
+    if (remaining.some((record) => (
+        record.driver_user_id === state.driverUserId
+        && record.sync_status === "awaiting_commit"
+    ))) {
+        scheduleCommitStatusPoll();
+    } else {
+        cancelCommitStatusPoll();
+    }
+    return { committed, rejected };
+}
+
 export async function syncOutbox({ quiet = false } = {}) {
     if (state.isSyncing) {
         state.syncRequested = true;
@@ -224,7 +279,10 @@ export async function syncOutbox({ quiet = false } = {}) {
         return;
     }
     let synced = 0;
+    let committed = 0;
+    let rejected = 0;
     let firstError = "";
+    let statusCheckError = "";
     let heldForOtherAccount = false;
     let syncAgain = false;
     state.isSyncing = true;
@@ -233,13 +291,26 @@ export async function syncOutbox({ quiet = false } = {}) {
         if (identity.user_id !== state.driverUserId || !identity.roles?.includes("driver")) {
             throw new Error("The active session does not match this driver's queued actions.");
         }
+        try {
+            const result = await pollAwaitingCommitEvents();
+            committed += result.committed;
+            rejected += result.rejected;
+        } catch (error) {
+            console.error("Could not check driver event commit status.", error);
+            statusCheckError = error.message || "The server commit status could not be checked.";
+            scheduleCommitStatusPoll();
+        }
         let records = await outboxTransaction("readonly", (store) => store.getAll());
         while (true) {
             heldForOtherAccount = heldForOtherAccount || records.some((record) => (
                 record.driver_user_id !== state.driverUserId
             ));
             const pending = records
-                .filter((record) => record.driver_user_id === state.driverUserId)
+                .filter((record) => (
+                    record.driver_user_id === state.driverUserId
+                    && record.sync_status !== "awaiting_commit"
+                    && record.sync_status !== "rejected"
+                ))
                 .sort((left, right) => {
                     const leftSequence = Number.isInteger(left.queue_sequence) ? left.queue_sequence : null;
                     const rightSequence = Number.isInteger(right.queue_sequence) ? right.queue_sequence : null;
@@ -323,7 +394,10 @@ export async function syncOutbox({ quiet = false } = {}) {
                     }
                     throw new Error(detail || `Gateway rejected event (${response.status}).`);
                 }
-                await outboxTransaction("readwrite", (store) => store.delete(record.event_id));
+                await outboxTransaction("readwrite", (store) => store.put({
+                    ...record,
+                    sync_status: "awaiting_commit"
+                }));
                 synced += 1;
                 records = await outboxTransaction("readonly", (store) => store.getAll());
             } catch (error) {
@@ -340,16 +414,39 @@ export async function syncOutbox({ quiet = false } = {}) {
         state.syncRequested = false;
         state.isSyncing = false;
     }
+    if (state.driverUserId) {
+        try {
+            const result = await pollAwaitingCommitEvents();
+            committed += result.committed;
+            rejected += result.rejected;
+            statusCheckError = "";
+        } catch (error) {
+            console.error("Could not check driver event commit status.", error);
+            statusCheckError = error.message || "The server commit status could not be checked.";
+            scheduleCommitStatusPoll();
+        }
+    }
     await refreshOutboxCount();
     render();
-    if (synced) notify(`${formatCount(synced, "event")} synced.`, "success");
+    if (synced) notify(`${formatCount(synced, "event")} accepted by Gateway; awaiting server commit.`, "info");
+    if (committed) notify(`${formatCount(committed, "event")} committed by the server.`, "success");
+    if (rejected) notify("One or more events were rejected. Review Activity for the reason; they remain on this device.", "error");
     if (firstError) notify(`Sync paused: ${firstError}`, "error");
+    if (statusCheckError) notify(`Commit status unavailable: ${statusCheckError}`, "warning");
     if (heldForOtherAccount) {
         notify("Some queued actions belong to another or older session and were kept on this device.", "error");
     }
     if (syncAgain) await syncOutbox({ quiet: true });
-    if (!synced && !firstError && !heldForOtherAccount && !quiet) {
-        notify("Nothing to sync right now.", "success");
+    if (!synced && !committed && !rejected && !firstError && !statusCheckError && !heldForOtherAccount && !quiet) {
+        const records = await outboxTransaction("readonly", (store) => store.getAll());
+        const awaitingCommit = records.some((record) => (
+            record.driver_user_id === state.driverUserId
+            && record.sync_status === "awaiting_commit"
+        ));
+        notify(
+            awaitingCommit ? "Events are still awaiting server commit." : "Nothing to sync right now.",
+            awaitingCommit ? "info" : "success"
+        );
     }
 }
 

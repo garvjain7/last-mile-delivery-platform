@@ -164,3 +164,35 @@ def test_driver_finance_proxy_rejects_malformed_payment_method_id(monkeypatch):
 
     assert error_info.value.status_code == 404
     assert client.request_args is None
+
+
+def test_event_status_proxy_forwards_driver_session_and_event_ids(monkeypatch):
+    client = FakeCoreAPIClient()
+    monkeypatch.setattr(driver_api, "core_api_client", client)
+    event_ids = [str(uuid4()), str(uuid4())]
+
+    async def receive():
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    request = Request(
+        {
+            "type": "http",
+            "http_version": "1.1",
+            "method": "GET",
+            "scheme": "http",
+            "path": "/driver/events/status",
+            "raw_path": b"/driver/events/status",
+            "query_string": f"event_id={event_ids[0]}&event_id={event_ids[1]}".encode(),
+            "headers": [(b"cookie", b"access_token=driver-session")],
+            "server": ("testserver", 80),
+            "client": ("testclient", 50000),
+        },
+        receive,
+    )
+
+    response = asyncio.run(driver_api.proxy_driver("events/status", request))
+
+    assert response.status_code == 200
+    assert client.request_args["url"] == "http://localhost:8000/driver/events/status"
+    assert httpx.QueryParams(client.request_args["params"]).get_list("event_id") == event_ids
+    assert client.request_args["headers"]["cookie"] == "access_token=driver-session"

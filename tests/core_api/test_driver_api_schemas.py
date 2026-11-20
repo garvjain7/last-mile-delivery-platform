@@ -9,6 +9,7 @@ from pydantic import SecretStr
 import pytest
 from pydantic import ValidationError
 from sqlalchemy.dialects import postgresql
+from starlette.responses import Response
 
 from db_models.models import DriverPaymentMethodType
 from services.core_api.app.config import config
@@ -25,6 +26,7 @@ from services.core_api.app.driver.schemas import (
     PaymentMethodCreate,
     RouteStopResponse,
 )
+from services.core_api.app.driver.router import get_driver_event_status
 from services.core_api.app.driver.service import route_location_payload, route_payload
 
 
@@ -218,3 +220,46 @@ def test_route_location_payload_uses_pickup_and_planned_stop_points():
     }
     assert "warehouses.location" in database.statements[0]
     assert "route_stops.planned_location" in database.statements[1]
+
+
+def test_driver_event_status_is_scoped_and_includes_pending_events():
+    driver_id = uuid4()
+    committed_id, rejected_id, legacy_id, pending_id = uuid4(), uuid4(), uuid4(), uuid4()
+    records = [
+        SimpleNamespace(event_id=committed_id, driver_id=driver_id, status="committed", reject_reason=None),
+        SimpleNamespace(event_id=rejected_id, driver_id=driver_id, status="rejected", reject_reason="stale route"),
+        SimpleNamespace(event_id=legacy_id, driver_id=None, status=None, reject_reason=None),
+    ]
+
+    class ScalarRows:
+        def all(self):
+            return records
+
+    class Database:
+        statement = None
+
+        async def scalars(self, statement):
+            self.statement = statement
+            return ScalarRows()
+
+    database = Database()
+    response = Response()
+    result = asyncio.run(
+        get_driver_event_status(
+            response,
+            [committed_id, rejected_id, legacy_id, pending_id],
+            SimpleNamespace(id=driver_id),
+            database,
+        )
+    )
+    compiled = str(database.statement.compile(dialect=postgresql.dialect()))
+
+    assert [event["status"] for event in result["events"]] == [
+        "committed",
+        "rejected",
+        "pending",
+        "pending",
+    ]
+    assert result["events"][1]["reject_reason"] == "stale route"
+    assert "processed_events.driver_id" in compiled
+    assert response.headers["cache-control"] == "no-store"

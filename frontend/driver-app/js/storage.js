@@ -141,6 +141,12 @@ export async function refreshOutboxCount() {
     try {
         const records = await outboxTransaction("readonly", (store) => store.getAll());
         state.outboxCount = records.length;
+        state.rejectedOutboxCount = state.driverUserId
+            ? records.filter((record) => (
+                record.driver_user_id === state.driverUserId
+                && record.sync_status === "rejected"
+            )).length
+            : 0;
     } catch (error) {
         console.error("Could not read the offline queue.", error);
         showError("Offline queue unavailable. Actions cannot be saved safely.");

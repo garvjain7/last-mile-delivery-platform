@@ -95,6 +95,11 @@ class FailureReason(python_enum.Enum):
     other                 = "other"
 
 
+class AttemptOutcome(python_enum.Enum):
+    delivered = "delivered"
+    failed = "failed"
+
+
 class DriverPaymentMethodType(python_enum.Enum):
     upi = "upi"
     bank_account = "bank_account"
@@ -437,6 +442,7 @@ class RouteStop(Base):
     sequence:           Mapped[int]                      = mapped_column(Integer, nullable=False)
     status:             Mapped[StopStatus]               = mapped_column(Enum(StopStatus, name="stop_status"), nullable=False, server_default="pending")
     failure_reason:     Mapped[Optional[FailureReason]]   = mapped_column(Enum(FailureReason, name="failure_reason"), nullable=True)
+    failure_notes:      Mapped[Optional[str]]             = mapped_column(Text, nullable=True)
     planned_location:   Mapped[object]                   = mapped_column(Geography(geometry_type="POINT", srid=4326), nullable=False)
     planned_distance_m: Mapped[Optional[int]]             = mapped_column(Integer, nullable=True)
 
@@ -472,6 +478,229 @@ class OrderEvent(Base):
     occurred_at:   Mapped[datetime]               = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
     order: Mapped["Order"] = relationship(back_populates="events")
+
+
+class DeliveryProof(Base):
+    """Proof metadata and private MinIO object key for a delivery."""
+
+    __tablename__ = "delivery_proof"
+    __table_args__ = (
+        CheckConstraint(
+            "proof_type IN ('photo', 'signature', 'recipient_name')",
+            name="delivery_proof_proof_type_check",
+        ),
+        Index(
+            "idx_delivery_proof_order_captured",
+            "order_id",
+            text("captured_at DESC"),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=func.uuid_generate_v4(),
+    )
+    route_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("routes.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    route_stop_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("route_stops.id", ondelete="CASCADE"),
+        nullable=True,
+    )
+    order_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("orders.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    driver_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("drivers.user_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    proof_type: Mapped[str] = mapped_column(Text, nullable=False)
+    proof_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    object_key: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    captured_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+
+class PackageScan(Base):
+    """Validated package scans and route pickup confirmations."""
+
+    __tablename__ = "package_scans"
+    __table_args__ = (
+        CheckConstraint("stage IN ('pickup', 'stop')", name="package_scans_stage_check"),
+        CheckConstraint(
+            "event_type IN ('package.scanned', 'pickup.confirmed')",
+            name="package_scans_event_type_check",
+        ),
+        Index(
+            "idx_package_scans_route_stop_scanned",
+            "route_stop_id",
+            text("scanned_at DESC"),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=func.uuid_generate_v4(),
+    )
+    route_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("routes.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    route_stop_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("route_stops.id", ondelete="CASCADE"),
+        nullable=True,
+    )
+    order_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("orders.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    driver_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("drivers.user_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    stage: Mapped[str] = mapped_column(Text, nullable=False)
+    tracking_token: Mapped[str] = mapped_column(Text, nullable=False)
+    is_valid: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
+    event_type: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        server_default="package.scanned",
+    )
+    scanned_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+
+class DeliveryAttempt(Base):
+    """Idempotent terminal delivery outcome for one route stop."""
+
+    __tablename__ = "delivery_attempts"
+    __table_args__ = (
+        CheckConstraint(
+            "(outcome = 'failed') = (failure_reason IS NOT NULL)",
+            name="delivery_attempts_check",
+        ),
+        UniqueConstraint("client_event_id", name="delivery_attempts_client_event_id_key"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=func.uuid_generate_v4(),
+    )
+    order_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("orders.id"), nullable=False)
+    route_stop_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("route_stops.id"),
+        nullable=False,
+    )
+    driver_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("drivers.user_id"), nullable=False)
+    outcome: Mapped[AttemptOutcome] = mapped_column(
+        Enum(AttemptOutcome, name="attempt_outcome"),
+        nullable=False,
+    )
+    failure_reason: Mapped[Optional[FailureReason]] = mapped_column(
+        Enum(FailureReason, name="failure_reason"),
+        nullable=True,
+    )
+    pod_photo_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    client_event_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+
+class DeliveryException(Base):
+    """Failure details associated with a driver delivery attempt."""
+
+    __tablename__ = "delivery_exceptions"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=func.uuid_generate_v4(),
+    )
+    route_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("routes.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    order_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("orders.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    driver_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("drivers.user_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    failure_reason: Mapped[Optional[FailureReason]] = mapped_column(
+        Enum(FailureReason, name="failure_reason"),
+        nullable=True,
+    )
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    return_to_hub: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+
+class ProcessedEvent(Base):
+    """Durable result receipt for a driver event consumed from Redis."""
+
+    __tablename__ = "processed_events"
+    __table_args__ = (
+        CheckConstraint("status IN ('committed', 'rejected')", name="processed_events_status_valid"),
+    )
+
+    event_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    event_type: Mapped[str] = mapped_column(Text, nullable=False)
+    driver_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("drivers.user_id"),
+        nullable=True,
+    )
+    route_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("routes.id"),
+        nullable=True,
+    )
+    route_stop_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("route_stops.id"),
+        nullable=True,
+    )
+    status: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    reject_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    processed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
 
 
 class DriverWallet(Base):

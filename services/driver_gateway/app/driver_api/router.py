@@ -39,6 +39,7 @@ _DRIVER_ENDPOINTS = {
     ("GET", "vehicles"),
     ("PUT", "vehicle"),
     ("GET", "routes"),
+    ("GET", "events/status"),
     ("GET", "earnings"),
     ("GET", "payment-methods"),
     ("POST", "payment-methods"),
@@ -122,7 +123,7 @@ async def _forward_to_core_api(
         upstream = await core_api_client.request(
             method=request.method,
             url=upstream_url,
-            params=request.query_params,
+            params=httpx.QueryParams(request.query_params.multi_items()),
             content=await request.body(),
             headers=headers,
         )

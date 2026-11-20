@@ -36,6 +36,10 @@ CREATE TYPE failure_reason AS ENUM (
     'recipient_unavailable', 'wrong_address', 'refused', 'other'
 );
 
+CREATE TYPE attempt_outcome AS ENUM (
+    'delivered', 'failed'
+);
+
 CREATE TYPE driver_payment_method_type AS ENUM (
     'upi', 'bank_account'
 );
@@ -206,6 +210,7 @@ CREATE TABLE route_stops (
     status              stop_status NOT NULL DEFAULT 'pending',
 
     failure_reason      failure_reason,
+    failure_notes       text,
 
     -- Snapshot of orders.delivery_location at planning time.
     planned_location    geography(Point, 4326) NOT NULL,   -- (lon, lat)
@@ -240,6 +245,77 @@ CREATE TABLE order_events (
     actor_user_id  uuid         REFERENCES users(id),     -- NULL = system
     occurred_at    timestamptz  NOT NULL DEFAULT now(),
     CHECK (from_status IS DISTINCT FROM to_status)
+);
+
+CREATE TABLE delivery_attempts (
+    id              uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+    order_id        uuid NOT NULL REFERENCES orders(id),
+    route_stop_id   uuid NOT NULL REFERENCES route_stops(id),
+    driver_id       uuid NOT NULL REFERENCES drivers(user_id),
+    outcome         attempt_outcome NOT NULL,
+    failure_reason  failure_reason,
+    pod_photo_url   text,
+    client_event_id uuid NOT NULL UNIQUE,
+    occurred_at     timestamptz NOT NULL,
+    created_at      timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT delivery_attempts_check
+        CHECK ((outcome = 'failed') = (failure_reason IS NOT NULL))
+);
+
+CREATE TABLE delivery_exceptions (
+    id              uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+    route_id        uuid NOT NULL REFERENCES routes(id) ON DELETE CASCADE,
+    order_id        uuid NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+    driver_id       uuid NOT NULL REFERENCES drivers(user_id) ON DELETE CASCADE,
+    failure_reason  failure_reason,
+    notes           text,
+    return_to_hub   boolean NOT NULL DEFAULT false,
+    created_at      timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE delivery_proof (
+    id              uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+    route_id        uuid NOT NULL REFERENCES routes(id) ON DELETE CASCADE,
+    route_stop_id   uuid REFERENCES route_stops(id) ON DELETE CASCADE,
+    order_id        uuid NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+    driver_id       uuid NOT NULL REFERENCES drivers(user_id) ON DELETE CASCADE,
+    proof_type      text NOT NULL
+                    CONSTRAINT delivery_proof_proof_type_check
+                    CHECK (proof_type IN ('photo', 'signature', 'recipient_name')),
+    proof_url       text,
+    object_key      text,
+    notes           text,
+    captured_at     timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE package_scans (
+    id              uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+    route_id        uuid NOT NULL REFERENCES routes(id) ON DELETE CASCADE,
+    route_stop_id   uuid REFERENCES route_stops(id) ON DELETE CASCADE,
+    order_id        uuid NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+    driver_id       uuid NOT NULL REFERENCES drivers(user_id) ON DELETE CASCADE,
+    stage           text NOT NULL
+                    CONSTRAINT package_scans_stage_check
+                    CHECK (stage IN ('pickup', 'stop')),
+    tracking_token  text NOT NULL,
+    is_valid        boolean NOT NULL DEFAULT true,
+    event_type      text NOT NULL DEFAULT 'package.scanned'
+                    CONSTRAINT package_scans_event_type_check
+                    CHECK (event_type IN ('package.scanned', 'pickup.confirmed')),
+    scanned_at      timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE processed_events (
+    event_id        uuid PRIMARY KEY,
+    event_type      text NOT NULL,
+    driver_id       uuid REFERENCES drivers(user_id),
+    route_id        uuid REFERENCES routes(id),
+    route_stop_id   uuid REFERENCES route_stops(id),
+    status          text
+                    CONSTRAINT processed_events_status_valid
+                    CHECK (status IN ('committed', 'rejected')),
+    reject_reason   text,
+    processed_at    timestamptz NOT NULL DEFAULT now()
 );
 
 -- Driver finance
@@ -329,6 +405,12 @@ CREATE UNIQUE INDEX uq_route_stops_order_pending
 
 CREATE INDEX idx_route_stops_order
     ON route_stops (order_id);
+
+CREATE INDEX idx_delivery_proof_order_captured
+    ON delivery_proof (order_id, captured_at DESC);
+
+CREATE INDEX idx_package_scans_route_stop_scanned
+    ON package_scans (route_stop_id, scanned_at DESC);
 
 CREATE INDEX idx_order_events_order
     ON order_events (order_id, occurred_at, id);
