@@ -169,6 +169,12 @@ These are demo records, not operational data. Seeded scan history does not pre-m
 
 The MinIO community image is built from source on first use, so its initial startup can take several minutes. Object data is stored in the `minio-data` Docker volume.
 
+To start the Core API, Driver Gateway, and the Routing Worker that commits queued driver events:
+```powershell
+docker compose --profile infra --profile core-apps up -d --build core-api driver-gateway routing-worker
+```
+The API, Gateway, and Routing Worker read their settings from `.env`; the internal API, Gateway, and OSRM URLs are configured for Docker networking.
+
 Before starting the local infrastructure profile, prepare the OSRM routing data once:
 ```powershell
 .\scripts\setup_local_osrm.ps1
