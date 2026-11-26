@@ -9,6 +9,7 @@ COPY services/driver_gateway/requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
 COPY streaming /app/streaming
+COPY frontend /app/frontend
 COPY services/driver_gateway/app /app/services/driver_gateway/app
 
 ENV PYTHONPATH=/app

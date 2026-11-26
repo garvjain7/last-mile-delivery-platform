@@ -2,7 +2,11 @@
 # Driver Gateway requirements pinned per architecture.md specification.
 
 fastapi==0.110.0
+python-multipart==0.0.9
 uvicorn==0.28.0
 redis==5.0.3
+httpx==0.27.0
 minio==7.2.5
 pydantic==2.6.4
+python-dotenv==1.0.1
+python-jose[cryptography]==3.3.0

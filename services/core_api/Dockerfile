@@ -10,6 +10,7 @@ RUN pip install --no-cache-dir -r /app/requirements.txt
 
 COPY db_models /app/db_models
 COPY streaming /app/streaming
+COPY frontend /app/frontend
 COPY services/core_api/app /app/services/core_api/app
 
 ENV PYTHONPATH=/app

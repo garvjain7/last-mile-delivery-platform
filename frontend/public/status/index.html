@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex, nofollow">
+    <title>Platform status</title>
+    <link rel="stylesheet" href="/static/status/css/status.css">
+    <script type="module" src="/static/status/js/status.js"></script>
+  </head>
+  <body>
+    <main class="status-page">
+      <header class="status-header">
+        <div>
+          <p class="eyebrow">LAST-MILE DELIVERY PLATFORM</p>
+          <h1>Service status</h1>
+          <p class="subheading">A snapshot of the services and dependencies.</p>
+        </div>
+        <button id="refresh-status" type="button">Check now</button>
+      </header>
+      <section class="summary-card" aria-live="polite">
+        <span id="overall-status" class="overall-status">Checking</span>
+        <span id="summary-count" class="summary-count">Waiting for snapshot…</span>
+      </section>
+      <p id="checked-at" class="checked-at" aria-live="polite">Checking current process state…</p>
+      <section id="service-list" class="service-list" aria-live="polite" aria-busy="true"></section>
+      <p class="status-note">This page does not poll in the background. “Check now” requests one fresh snapshot. A service is active only when this process can confirm its mount, running task, or dependency connection.</p>
+    </main>
+  </body>
+</html>

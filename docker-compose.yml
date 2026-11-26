@@ -21,21 +21,29 @@ services:
       - "6379:6379"
 
   minio:
-    image: minio/minio:RELEASE.2023-09-20T22-40-07Z
+    image: local/minio:source-built
+    build:
+      context: ./services/minio
+      dockerfile: Dockerfile
     profiles: ["infra", "all"]
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
     ports:
       - "9000:9000"
       - "9001:9001"
+    volumes:
+      - minio-data:/data
 
   osrm:
-    image: osrm/osrm-backend:v5.27.1
+    image: ghcr.io/project-osrm/osrm-backend:v5.27.1
     profiles: ["infra", "all"]
+    command: ["osrm-routed", "--algorithm", "mld", "/data/southern-zone-latest.osrm"]
     ports:
       - "5000:5000"
+    volumes:
+      - osrm-data:/data
 
   vroom:
     image: vroomexpress/vroom-docker:v1.13.0
@@ -54,6 +62,10 @@ services:
       context: .
       dockerfile: services/core_api/Dockerfile
     profiles: ["core-apps", "all"]
+    env_file:
+      - .env
+    environment:
+      DRIVER_GATEWAY_URL: http://localhost:8002
     ports:
       - "8000:8000"
     depends_on:
@@ -65,9 +77,14 @@ services:
       context: .
       dockerfile: services/routing_worker/Dockerfile
     profiles: ["core-apps", "all"]
+    env_file:
+      - .env
+    environment:
+      OSRM_URL: http://osrm:5000
     depends_on:
       - postgres
       - redis
+      - osrm
 
   control-tower:
     build:
@@ -84,6 +101,11 @@ services:
       context: .
       dockerfile: services/driver_gateway/Dockerfile
     profiles: ["core-apps", "all"]
+    env_file:
+      - .env
+    environment:
+      CORE_API_URL: http://core-api:8000
+      MINIO_ENDPOINT: minio:9000
     ports:
       - "8002:8002"
     depends_on:
@@ -95,3 +117,8 @@ services:
       context: .
       dockerfile: services/simulator/Dockerfile
     profiles: ["simulator", "all"]
+
+volumes:
+  minio-data:
+  osrm-data:
+    name: lmd-osrm-data

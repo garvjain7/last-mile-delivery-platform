@@ -4,7 +4,7 @@
 import asyncio
 import logging
 import httpx
-from app.config import config
+from services.simulator.app.config import config
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("simulator")

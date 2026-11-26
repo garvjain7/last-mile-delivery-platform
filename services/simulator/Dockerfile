@@ -12,4 +12,4 @@ COPY services/simulator/app /app/services/simulator/app
 
 ENV PYTHONPATH=/app
 
-CMD ["python", "-m", "services.simulator.app.main"]
+CMD ["uvicorn", "services.simulator.app.main:app", "--host", "0.0.0.0", "--port", "8000"]
