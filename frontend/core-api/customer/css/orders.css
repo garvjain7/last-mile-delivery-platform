@@ -1,0 +1,397 @@
+:root {
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  color: #172b3a;
+  background: #f4f7f8;
+  font-synthesis: none;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+.orders-page {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 42px 24px 64px;
+}
+
+.orders-filter-panel {
+  display: grid;
+  gap: 18px;
+  padding: 18px;
+  border: 1px solid #dfe5de;
+  border-radius: 14px;
+  background: #fff;
+}
+
+.order-tabs {
+  display: flex;
+  gap: 7px;
+  padding: 5px;
+  border-radius: 10px;
+  background: #edf1ed;
+}
+
+.order-tabs button {
+  display: flex;
+  min-height: 40px;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #52635c;
+  font: 600 13px var(--body);
+  cursor: pointer;
+}
+
+.order-tabs button[aria-pressed="true"] {
+  background: #fff;
+  color: #0a3d30;
+  box-shadow: 0 1px 4px #16392b18;
+}
+
+.order-tabs button strong {
+  color: #668074;
+  font-size: 11px;
+}
+
+.customer-filters {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  align-items: end;
+  gap: 12px;
+}
+
+.customer-search-field {
+  grid-column: span 2;
+}
+
+.clear-filters,
+.claim-orders-button {
+  min-height: 42px;
+}
+
+.load-more-button {
+  display: block;
+  min-width: 150px;
+  margin: 20px auto;
+}
+
+.detail-summary,
+.detail-card {
+  margin-bottom: 16px;
+  padding: 22px;
+}
+
+.detail-heading,
+.tracking-code-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.detail-heading h2,
+.detail-card > h2 {
+  margin: 8px 0 4px;
+  color: #15211c;
+  font-family: var(--display);
+  font-size: 20px;
+}
+
+.detail-heading p:not(.customer-eyebrow) {
+  margin: 0;
+  color: #69776f;
+  font-size: 13px;
+}
+
+.tracking-code-row {
+  justify-content: flex-start;
+  margin-top: 20px;
+  padding-top: 17px;
+  border-top: 1px solid #edf0eb;
+}
+
+.tracking-code-row > div {
+  display: grid;
+  gap: 4px;
+}
+
+.tracking-code-row span {
+  color: #758179;
+  font-size: 11px;
+}
+
+.tracking-code-row strong {
+  color: #173d32;
+  font-size: 16px;
+  letter-spacing: 0.08em;
+}
+
+.detail-card > h2 {
+  margin: 0 0 20px;
+}
+
+.detail-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  margin: 0;
+}
+
+.detail-fields > div {
+  display: grid;
+  gap: 5px;
+}
+
+.detail-fields dt {
+  color: #77847d;
+  font-size: 12px;
+}
+
+.detail-fields dd {
+  margin: 0;
+  color: #26352e;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.detail-track-button {
+  margin-top: 22px;
+}
+
+.back-link {
+  display: inline-block;
+  margin-bottom: 18px;
+  color: #0e5a45;
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.orders-header {
+  margin-bottom: 30px;
+}
+
+.back-link {
+  color: #28715f;
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.eyebrow {
+  margin: 34px 0 8px;
+  color: #587365;
+  font-size: 0.75rem;
+  font-weight: 750;
+  letter-spacing: 0.12em;
+}
+
+.orders-header h1 {
+  margin: 0;
+  font-size: clamp(2rem, 5vw, 2.8rem);
+  letter-spacing: -0.04em;
+}
+
+.intro {
+  margin: 10px 0 0;
+  color: #647481;
+}
+
+.orders-controls {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 18px;
+}
+
+.order-tabs {
+  display: flex;
+  gap: 6px;
+  padding: 5px;
+  border-radius: 12px;
+  background: #e7edeb;
+}
+
+.order-tabs button {
+  padding: 9px 15px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #52635c;
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.order-tabs button[aria-pressed="true"] {
+  background: #fff;
+  color: #173d32;
+  box-shadow: 0 1px 4px #16392b18;
+}
+
+.search-label {
+  display: grid;
+  gap: 6px;
+  color: #53646c;
+  font-size: 0.82rem;
+  font-weight: 650;
+}
+
+.search-label input {
+  width: min(320px, 55vw);
+  height: 42px;
+  padding: 0 12px;
+  border: 1px solid #d7e0e1;
+  border-radius: 9px;
+  background: #fff;
+  font: inherit;
+}
+
+.orders-list {
+  display: grid;
+  gap: 11px;
+}
+
+.order-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 20px 22px;
+  border: 1px solid #e0e7e7;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 3px 14px #173b2c08;
+}
+
+.order-details h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.order-details p {
+  margin: 6px 0 10px;
+  color: #72818a;
+  font-size: 0.86rem;
+}
+
+.status {
+  display: inline-block;
+  padding: 5px 9px;
+  border-radius: 99px;
+  background: #edf4f1;
+  color: #28634e;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: capitalize;
+}
+
+.track-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  padding: 0 15px;
+  border-radius: 9px;
+  background: #175b48;
+  color: #fff;
+  font-weight: 700;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.track-link:hover {
+  background: #104a3a;
+}
+
+.message {
+  min-height: 24px;
+  color: #667781;
+}
+
+.load-more {
+  display: block;
+  margin: 20px auto 0;
+  padding: 10px 20px;
+  border: 1px solid #cbd8d4;
+  border-radius: 9px;
+  background: #fff;
+  color: #245944;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.load-more:disabled {
+  opacity: 0.6;
+}
+
+@media (max-width: 600px) {
+  .orders-page {
+    padding: 26px 16px 44px;
+  }
+
+  .orders-controls {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .search-label input {
+    width: 100%;
+  }
+
+  .order-tabs button {
+    flex: 1;
+  }
+
+  .order-card {
+    align-items: flex-start;
+    flex-direction: column;
+    padding: 17px;
+  }
+
+  .order-actions,
+  .track-link {
+    width: 100%;
+  }
+
+  .track-link {
+    min-height: 44px;
+  }
+}
+
+@media (max-width: 760px) {
+  .customer-filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .customer-search-field {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 520px) {
+  .detail-heading,
+  .tracking-code-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .detail-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .orders-filter-panel,
+  .detail-summary,
+  .detail-card {
+    padding: 16px;
+  }
+}

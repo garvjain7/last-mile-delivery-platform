@@ -1,22 +1,43 @@
-# Forwards POD multi-part photos straight to MinIO
-# MinIO S3 object storage client wrapper for proof-of-delivery (POD) image uploads.
+"""MinIO object storage boundary for driver delivery evidence."""
+
+from io import BytesIO
 
 from minio import Minio
-from app.config import config
+from minio.error import S3Error
+
+from services.driver_gateway.app.config import config
+
 
 class MinIOStorageClient:
-    """Storage client managing multi-part POD photo uploads to MinIO bucket."""
+    """Upload driver evidence without opening an object-storage connection per request."""
 
     def __init__(self):
         self.client = Minio(
             config.minio_endpoint,
             access_key=config.minio_access_key,
             secret_key=config.minio_secret_key,
-            secure=False
+            secure=config.minio_secure,
         )
         self.bucket_name = "pod-photos"
 
-    async def upload_pod_photo(self, file_name: str, file_data: bytes, content_type: str) -> str:
-        """Upload proof-of-delivery photo bytes directly to MinIO bucket."""
-        # TODO: Ensure bucket exists and execute put_object upload
-        return f"http://{config.minio_endpoint}/{self.bucket_name}/{file_name}"
+    def upload_evidence(
+        self,
+        object_key: str,
+        file_data: bytes,
+        content_type: str,
+    ) -> str:
+        """Store evidence under a stable event key and return its private object key."""
+        if not self.client.bucket_exists(self.bucket_name):
+            try:
+                self.client.make_bucket(self.bucket_name)
+            except S3Error as exc:
+                if exc.code not in {"BucketAlreadyOwnedByYou", "BucketAlreadyExists"}:
+                    raise
+        self.client.put_object(
+            self.bucket_name,
+            object_key,
+            BytesIO(file_data),
+            length=len(file_data),
+            content_type=content_type,
+        )
+        return object_key

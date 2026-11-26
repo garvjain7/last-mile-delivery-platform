@@ -1,38 +1,59 @@
-# Ingests orders, fires PostGIS KNN, appends to orders_stream
-# Router handling order ingestion and PostGIS nearest-facility assignment.
+"""Public order intake endpoint."""
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from __future__ import annotations
+
+from datetime import datetime
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, status
 from pydantic import BaseModel, Field
-from typing import Optional
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from services.core_api.app.database.connection import get_db_session
+from services.core_api.app.orders.service import create_order
 
 router = APIRouter()
 
+
 class CreateOrderRequest(BaseModel):
-    """Payload schema for order creation request."""
-    retailer_id: str
-    dropoff_raw_address: str
-    time_window: str
-    weight_kg: float
-    volume_l: float
+    seller_id: UUID
+    recipient_name: str = Field(min_length=1, max_length=200)
+    recipient_phone: str = Field(pattern=r"^\+[1-9][0-9]{7,14}$")
+    delivery_address: str = Field(min_length=5, max_length=1000)
+    weight_kg: float = Field(gt=0)
+    volume_m3: float = Field(gt=0)
+    window_earliest: datetime | None = None
+    window_latest: datetime | None = None
 
-class CreateOrderResponse(BaseModel):
-    """Response schema following order creation and facility assignment."""
-    order_id: str
-    pickup_facility_id: str
-    status: str
 
-@router.post("/", response_model=CreateOrderResponse, status_code=status.HTTP_201_CREATED)
-async def create_order(payload: CreateOrderRequest):
-    """
-    Ingest order, geocode address via Nominatim, assign nearest facility via PostGIS KNN (<->),
-    persist order to Postgres, and publish order.created event to orders_stream.
-    """
-    # TODO: Geocode dropoff address via Nominatim (httpx AsyncClient with timeout)
-    # TODO: Execute PostGIS KNN (<->) query to find nearest pickup_facility_id
-    # TODO: Persist order record in Postgres via db-models
-    # TODO: Publish order.created event to orders_stream with MAXLEN ~ 50000
-    return CreateOrderResponse(
-        order_id="ord-stub-123",
-        pickup_facility_id="fac-stub-456",
-        status="created"
+def _response(order, created: bool) -> dict:
+    return {
+        "order_id": str(order.id),
+        "tracking_token": order.tracking_token,
+        "seller_id": str(order.merchant_id),
+        "warehouse_id": str(order.warehouse_id) if order.warehouse_id else None,
+        "status": order.status.value,
+        "created_at": order.created_at,
+        "created": created,
+    }
+
+
+@router.post("/", status_code=status.HTTP_201_CREATED)
+async def create_guest_order(
+    payload: CreateOrderRequest,
+    db: AsyncSession = Depends(get_db_session),
+):
+    """Create an unclaimed order for integrations that do not have a customer account."""
+    order, created = await create_order(
+        db,
+        customer_id=None,
+        seller_id=payload.seller_id,
+        recipient_name=payload.recipient_name,
+        recipient_phone=payload.recipient_phone,
+        delivery_address=payload.delivery_address,
+        weight_kg=payload.weight_kg,
+        volume_m3=payload.volume_m3,
+        window_earliest=payload.window_earliest,
+        window_latest=payload.window_latest,
     )
+    return _response(order, created)

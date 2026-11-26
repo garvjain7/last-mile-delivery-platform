@@ -1,0 +1,33 @@
+.account-chip-track {
+  position: fixed;
+  z-index: 30;
+  bottom: 20px;
+  left: 20px;
+  width: min(330px, calc(100vw - 40px));
+  padding: 12px 14px;
+  border: 1px solid #d4d9cf;
+  border-radius: 13px;
+  background: #fff;
+  box-shadow: 0 7px 26px #14231d24;
+  color: #15211c;
+}
+
+.account-chip-track .account-identity span {
+  color: #65736b;
+}
+
+.account-chip-track .logout-button {
+  color: #0e5a45;
+}
+
+.account-chip-track .logout-button:hover {
+  background: #eef3ef;
+}
+
+@media (max-width: 600px) {
+  .account-chip-track {
+    bottom: 12px;
+    left: 12px;
+    width: min(310px, calc(100vw - 24px));
+  }
+}

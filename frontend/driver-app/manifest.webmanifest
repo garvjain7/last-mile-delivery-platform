@@ -1,0 +1,10 @@
+{
+  "name": "Last Mile Delivery Driver",
+  "short_name": "LM Driver",
+  "description": "Last Mile Delivery driver route, parcel, and proof-of-delivery app.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f5f6f2",
+  "theme_color": "#15231f"
+}
