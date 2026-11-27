@@ -15,7 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from db_models.models import Merchant, Order, OrderEvent, OrderStatus
+from db_models.models import Merchant, Order, OrderEvent, OrderStatus, Warehouse
 from services.core_api.app.config import config
 from streaming.client import add_to_stream
 from streaming.schemas.events import OrderCreatedEvent
@@ -116,11 +116,20 @@ async def create_order(
                 if existing is not None:
                     return existing, False
 
+            warehouse = await db.scalar(
+                select(Warehouse)
+                .where(Warehouse.is_active.is_(True))
+                .order_by(Warehouse.location.op("<->")(delivery_location))
+                .limit(1)
+            )
+            if warehouse is None:
+                raise HTTPException(status_code=503, detail="No active warehouse is available")
+
             tracking_token = _tracking_token()
             order = Order(
                 merchant_id=seller_id,
                 merchant_order_ref=tracking_token,
-                warehouse_id=None,
+                warehouse_id=warehouse.id,
                 customer_id=customer_id,
                 idempotency_key=idempotency_key,
                 status=OrderStatus.placed,

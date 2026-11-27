@@ -12,6 +12,18 @@ services:
         sync: false
       - key: REDIS_URL
         sync: false
+      - key: ENV
+        value: production
+      - key: JWT_SECRET_KEY
+        sync: false
+      - key: PAYMENT_METHOD_ENCRYPTION_KEY
+        sync: false
+      - key: COOKIE_SECURE
+        value: "true"
+      - key: DRIVER_APP_ORIGINS
+        sync: false
+      - key: DRIVER_GATEWAY_URL
+        sync: false
       - key: NOMINATIM_URL
         sync: false
 
@@ -51,7 +63,17 @@ services:
         sync: false
       - key: JWT_ALGORITHM
         value: HS256
+      - key: CORE_API_URL
+        sync: false
       - key: MINIO_ENDPOINT
+        sync: false
+      - key: MINIO_SECURE
+        sync: false
+      - key: MINIO_ROOT_USER
+        sync: false
+      - key: MINIO_ROOT_PASSWORD
+        sync: false
+      - key: DRIVER_APP_ORIGINS
         sync: false
 
   - type: worker

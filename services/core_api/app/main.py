@@ -7,23 +7,26 @@ from pathlib import Path
 from time import perf_counter
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.exceptions import RequestValidationError
 from slowapi.errors import RateLimitExceeded
 
 from services.core_api.app.auth.router import router as auth_router
+from services.core_api.app.config import config
 from services.core_api.app.orders.router import router as orders_router
 from services.core_api.app.customer.router import router as customer_router
+from services.core_api.app.driver.router import router as driver_router
 from services.core_api.app.tracking.router import limiter as tracking_limiter
 from services.core_api.app.tracking.router import router as tracking_router
 from services.core_api.app.staff.router import router as staff_router
 from services.core_api.app.home.router import router as home_router
 from services.core_api.app.admin.deps import require_admin
 from services.core_api.app.admin.security import csrf_check
-from services.core_api.app.admin.routes import activity, drivers, merchants, orders, overview, users, warehouses
+from services.core_api.app.admin.routes import activity, driver_earnings, drivers, merchants, orders, overview, users, warehouses
 from services.core_api.app.panels import router as panels_router
-from services.core_api.app.admin.security import ADMIN_SECURITY_HEADERS
+from services.core_api.app.admin.security import ADMIN_SECURITY_HEADERS, DRIVER_APP_SECURITY_HEADERS
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +47,14 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="Core API Service", version="1.0.0", lifespan=lifespan)
+if config.driver_app_origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=config.driver_app_origins,
+        allow_credentials=True,
+        allow_methods=["GET", "PATCH", "POST", "PUT"],
+        allow_headers=["Authorization", "Content-Type"],
+    )
 app.state.limiter = tracking_limiter
 frontend_dir = Path(__file__).resolve().parents[3] / "frontend"
 
@@ -92,7 +103,8 @@ async def admin_security_headers_middleware(request: Request, call_next):
         path == panel_path or path.startswith(panel_path + "/")
         for panel_path in protected_panel_paths
     ):
-        for key, value in ADMIN_SECURITY_HEADERS.items():
+        security_headers = DRIVER_APP_SECURITY_HEADERS if path == "/driver" else ADMIN_SECURITY_HEADERS
+        for key, value in security_headers.items():
             response.headers[key] = value
     if path == "/api/users" or path.startswith("/api/users/"):
         response.headers["Cache-Control"] = "no-store"
@@ -110,6 +122,7 @@ app.mount("/static/register/js", StaticFiles(directory=frontend_dir / "public" /
 app.mount("/static/reset-password/js", StaticFiles(directory=frontend_dir / "public" / "reset-password" / "js"), name="static-reset-password-js")
 app.mount("/static/track/css", StaticFiles(directory=frontend_dir / "public" / "track" / "css"), name="static-track-css")
 app.mount("/static/track/js", StaticFiles(directory=frontend_dir / "public" / "track" / "js"), name="static-track-js")
+app.mount("/static/driver-app", StaticFiles(directory=frontend_dir / "driver-app"), name="static-driver-app")
 
 
 @app.get("/health", tags=["Health"])
@@ -121,6 +134,7 @@ async def health():
 app.include_router(home_router, tags=["Home"])
 app.include_router(tracking_router)
 app.include_router(auth_router, prefix="/auth", tags=["Auth"])
+app.include_router(driver_router, prefix="/driver", tags=["Driver"])
 app.include_router(orders_router, prefix="/orders", tags=["Orders"])
 app.include_router(customer_router)
 app.include_router(staff_router, prefix="/staff", tags=["Staff"])
@@ -128,7 +142,7 @@ admin_router = APIRouter(
     prefix="/api/admin",
     dependencies=[Depends(require_admin), Depends(csrf_check)],
 )
-for route_module in (overview, drivers, users, merchants, warehouses, orders, activity):
+for route_module in (overview, drivers, users, merchants, warehouses, orders, activity, driver_earnings):
     admin_router.include_router(route_module.router)
 app.include_router(admin_router)
 app.include_router(panels_router)

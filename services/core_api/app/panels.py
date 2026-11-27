@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -17,12 +18,14 @@ from sqlalchemy.orm import selectinload
 
 from db_models.models import User
 from services.core_api.app.admin.security import ADMIN_SECURITY_HEADERS
+from services.core_api.app.config import config
 from services.core_api.app.auth.security import decode_access_token
 from services.core_api.app.auth.dependencies import resolve_self_customer
 from services.core_api.app.database.connection import get_db_session
 
 router = APIRouter()
 PANEL_ROOT = Path(__file__).resolve().parents[3] / "frontend" / "core-api"
+DRIVER_APP_ROOT = Path(__file__).resolve().parents[3] / "frontend" / "driver-app"
 ADMIN_PAGE_FILES = {
     "overview": "index.html",
     "drivers": "drivers.html",
@@ -269,14 +272,31 @@ async def fleet_manager_panel_asset(asset_path: str, request: Request, access_to
 
 
 @router.get("/driver", include_in_schema=False)
-async def driver_panel(
-    request: Request,
-    access_token: Optional[str] = Cookie(None),
-    db: AsyncSession = Depends(get_db_session),
-) -> Response:
-    return await serve_panel("driver", PANEL_ROOT / "driver" / "index.html", request, access_token, db)
+async def driver_panel() -> Response:
+    return FileResponse(DRIVER_APP_ROOT / "index.html")
 
 
-@router.get("/driver/assets/{asset_path:path}", include_in_schema=False)
-async def driver_panel_asset(asset_path: str, request: Request, access_token: Optional[str] = Cookie(None), db: AsyncSession = Depends(get_db_session)) -> Response:
-    return await serve_panel_asset("driver", asset_path, request, access_token, db)
+@router.get("/driver-app-sw.js", include_in_schema=False)
+async def driver_app_service_worker() -> Response:
+    return FileResponse(
+        DRIVER_APP_ROOT / "sw.js",
+        media_type="application/javascript",
+        headers={"Service-Worker-Allowed": "/"},
+    )
+
+
+@router.get("/driver-app-manifest.webmanifest", include_in_schema=False)
+async def driver_app_manifest() -> Response:
+    return FileResponse(
+        DRIVER_APP_ROOT / "manifest.webmanifest",
+        media_type="application/manifest+json",
+    )
+
+
+@router.get("/driver-app-config.js", include_in_schema=False)
+async def driver_app_config() -> Response:
+    return Response(
+        content=f"window.DRIVER_GATEWAY_URL = {json.dumps(config.driver_gateway_url)};",
+        media_type="application/javascript",
+        headers={"Cache-Control": "no-store"},
+    )

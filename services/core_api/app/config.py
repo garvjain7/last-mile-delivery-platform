@@ -3,7 +3,7 @@
 
 import os
 from dotenv import load_dotenv
-from pydantic import BaseModel
+from pydantic import BaseModel, SecretStr
 
 load_dotenv()
 
@@ -17,6 +17,15 @@ class CoreAPIConfig(BaseModel):
 
     # --- Database ---
     database_url: str = os.getenv("DATABASE_URL", "")
+    payment_method_encryption_key: SecretStr = SecretStr(
+        os.getenv("PAYMENT_METHOD_ENCRYPTION_KEY", "")
+    )
+
+    # --- Driver Gateway ---
+    driver_gateway_url: str = os.getenv(
+        "DRIVER_GATEWAY_URL",
+        "http://127.0.0.1:8002",
+    ).rstrip("/")
 
     # --- Redis ---
     redis_url: str = os.getenv("REDIS_URL", "redis://localhost:6379")
@@ -44,6 +53,13 @@ class CoreAPIConfig(BaseModel):
 
     # --- Cookies ---
     cookie_secure: bool = os.getenv("COOKIE_SECURE", "false").lower() == "true"
+
+    # --- Browser driver app ---
+    driver_app_origins: list[str] = [
+        origin.strip()
+        for origin in os.getenv("DRIVER_APP_ORIGINS", "").split(",")
+        if origin.strip()
+    ]
 
     # --- Proxy trust (Fix 4: rightmost XFF hop) ---
     # Number of trusted reverse-proxy hops between the internet and this service.

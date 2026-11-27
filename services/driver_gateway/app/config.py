@@ -10,9 +10,19 @@ load_dotenv()
 class DriverGatewayConfig(BaseModel):
     """Configuration properties for Driver Gateway service. Completely decoupled from Postgres."""
     redis_url: str = os.getenv("REDIS_URL", "redis://localhost:6379")
+    core_api_url: str = os.getenv("CORE_API_URL", "http://localhost:8000").rstrip("/")
     minio_endpoint: str = os.getenv("MINIO_ENDPOINT", "localhost:9000")
     minio_access_key: str = os.getenv("MINIO_ROOT_USER", "minioadmin")
     minio_secret_key: str = os.getenv("MINIO_ROOT_PASSWORD", "minioadmin")
+    minio_secure: bool = os.getenv("MINIO_SECURE", "false").lower() == "true"
+    driver_app_origins: list[str] = [
+        origin.strip()
+        for origin in os.getenv(
+            "DRIVER_APP_ORIGINS",
+            "http://127.0.0.1:8000,http://localhost:8000",
+        ).split(",")
+        if origin.strip()
+    ]
     jwt_secret_key: str
     jwt_algorithm: str = os.getenv("JWT_ALGORITHM", "HS256")
 

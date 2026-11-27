@@ -53,7 +53,7 @@ Solid arrows show a request or code path that exists. Dotted arrows represent a 
 | Driver | Start route, send location/stop/delivery events | Driver Gateway validates HS256 JWT role and publishes accepted events. It does not persist them. |
 | Core API | Authentication, customer/merchant HTTP entry points, order creation and reads | Auth, public tracking, customer APIs, role-gated HTML serving, and order insert logic exist. The intended merchant and warehouse operations are missing. |
 | Routing Worker | Consume eligible parcels, plan routes, write routes/stops, process delivery outcomes | Entrypoint and consumer files exist, but `main()` does not start consumers; consumer functions are TODO/pass. OSRM/VROOM clients return placeholders. |
-| Postgres + PostGIS | Durable source for orders, routes, assignments, and order history | Current schema contains users/roles, merchants, warehouses, merchant/warehouse membership, vehicles/drivers, orders, routes, route stops, and order events. It has no `delivery_attempt` or `processed_event` table. |
+| Postgres + PostGIS | Durable source for orders, routes, assignments, driver events, and order history | Driver persistence uses the existing `delivery_proof`, `package_scans`, `delivery_attempts`, `delivery_exceptions`, and `order_events` tables, with `processed_events` for event receipt/status. |
 | Redis | Stream notifications and Control Tower hot state | Shared Redis client and XADD helper exist. The current worker/telemetry readers are not implemented. |
 
 ## 4. Route map: pages versus data APIs
@@ -201,7 +201,7 @@ Driver Gateway publishes location/arrival events. Control Tower stores the lates
 
 Delivery success/failure changes route stop and order state, creates an event/attempt record, and updates customer/merchant views. Failure remains `attempt_failed` until dispatcher manually re-queues it.
 
-**Current support:** `route_stops` has pending/delivered/failed stop states and failure reason. `orders` has delivered/attempt_failed statuses. But gateway events are only added to Redis; `terminal_events_consumer.py` is TODO/pass. The schema has no `delivery_attempt` or `processed_event` table, despite older architecture text referring to them. No delivery status transition or manual re-queue endpoint is implemented. Only the initial order event is currently written by order creation.
+**Current support:** `route_stops` has pending/delivered/failed stop states, failure reason, and optional failure notes. `orders` has delivered/attempt_failed statuses. Routing Worker validates driver events, writes supported scan/POD/terminal changes and a `processed_events` receipt in one transaction, then acknowledges Redis. Core API returns driver-scoped receipt status through the Gateway proxy; the PWA retains rejected records. No delivery-attempt history table or manual re-queue endpoint is implemented.
 
 ### Step 10 — Rescue and re-plan
 
@@ -228,8 +228,8 @@ These are remaining facts to resolve before implementing merchant Send / warehou
 | Warehouse intake | Staff Receive operation triggers `order.received` | No receive API/event, and no warehouse staff-facing flow. | Routing cannot reliably know the parcel is physically present. |
 | Routing trigger | Route only after warehouse receipt | Core API still publishes `order.created` after creation, but it carries no warehouse assignment; Routing Worker consumer is a stub. | The future planner must wait for an explicit warehouse-received signal instead of treating `order.created` as routing-ready. |
 | Idempotent processing | Retries do not duplicate orders or assignments | Customer order create has DB key/index; guest create has no usable dedupe key; worker consumers and assignment idempotency are absent. | Only authenticated customer order creation has a database-backed idempotency path today. |
-| Delivery dedupe | `processed_event` tracks side-effecting driver events | No `processed_event` table in `schema.sql`; terminal consumer is not implemented. | The described replay-safe delivery persistence has no current storage path. |
-| Attempts/POD | Delivery attempts and proof-of-delivery details | No `delivery_attempt` table in current schema. Gateway event model has optional `pod_photo_url`, but gateway only publishes the value. | No durable delivery attempt/POD record exists. |
+| Delivery dedupe | `processed_events` tracks driver-event outcomes by client UUID | Routing Worker commits an event receipt with domain writes; Core API status reads are scoped to the signed-in driver. | Duplicate event UUIDs are skipped; unacknowledged DB failures are retried. |
+| Attempts/POD | Delivery attempts and proof-of-delivery details | `delivery_attempts` records terminal attempts, `delivery_proof` stores supported photo/signature MinIO keys, and `delivery_exceptions` stores failure details. | Exception-evidence purpose and recipient-name-only evidence remain unsupported by the Driver event persistence contract. |
 | Driver hours | Planner considers driver hours and vehicle capacity | Vehicles store weight/volume capacities, but no driver shift/hour columns are present in current schema. | Capacity is represented; driver working-hour input is not. |
 | Stream size | Architecture text says max length around 50,000 | `streaming/client.py` currently uses approximate `MAXLEN 10000`. | Actual retention differs from older design prose. |
 

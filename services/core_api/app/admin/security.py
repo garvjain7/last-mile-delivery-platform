@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import logging
 from typing import Optional
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlsplit
 
 from fastapi import Depends, HTTPException, Request, status
 
@@ -40,6 +40,35 @@ ADMIN_SECURITY_HEADERS: dict[str, str] = {
         "form-action 'self'"
     ),
 }
+
+_driver_gateway_url = urlsplit(config.driver_gateway_url)
+if (
+    _driver_gateway_url.scheme not in {"http", "https"}
+    or not _driver_gateway_url.hostname
+    or _driver_gateway_url.username
+    or _driver_gateway_url.password
+    or _driver_gateway_url.path not in {"", "/"}
+    or _driver_gateway_url.query
+    or _driver_gateway_url.fragment
+):
+    raise RuntimeError("DRIVER_GATEWAY_URL must be an absolute HTTP or HTTPS origin")
+
+_driver_gateway_authority = _driver_gateway_url.hostname
+if ":" in _driver_gateway_authority:
+    _driver_gateway_authority = f"[{_driver_gateway_authority}]"
+if _driver_gateway_url.port:
+    _driver_gateway_authority += f":{_driver_gateway_url.port}"
+
+DRIVER_APP_SECURITY_HEADERS = dict(ADMIN_SECURITY_HEADERS)
+DRIVER_APP_SECURITY_HEADERS["Content-Security-Policy"] = (
+    ADMIN_SECURITY_HEADERS["Content-Security-Policy"].replace(
+        "connect-src 'self';",
+        f"connect-src 'self' {_driver_gateway_url.scheme}://{_driver_gateway_authority};",
+    ).replace(
+        "style-src 'self' https://fonts.googleapis.com;",
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;",
+    )
+)
 
 
 # ---------------------------------------------------------------------------

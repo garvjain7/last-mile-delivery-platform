@@ -1,15 +1,41 @@
-# THE SECURE DMZ EDGE — COMPLETELY DECOUPLED FROM POSTGRES
-# FastAPI application entrypoint for Driver Gateway service.
+"""Driver Gateway application assembly; database access belongs to Core API."""
 
-from pathlib import Path
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
-from fastapi.responses import FileResponse
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from services.driver_gateway.app.config import config
+from services.driver_gateway.app.driver_api.router import (
+    close_core_api_client,
+    router as driver_api_router,
+)
 from services.driver_gateway.app.ingestion.router import router as ingestion_router
+from services.driver_gateway.app.routes.frontend import (
+    DRIVER_APP_DIR,
+    FRONTEND_DIR,
+    router as frontend_router,
+)
+from services.driver_gateway.app.routes.health import router as health_router
 
-app = FastAPI(title="Driver Gateway API", version="1.0.0")
-FRONTEND_DIR = Path(__file__).resolve().parents[3] / "frontend"
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    """Close shared upstream clients when the Gateway shuts down."""
+    try:
+        yield
+    finally:
+        await close_core_api_client()
+
+
+app = FastAPI(title="Driver Gateway API", version="1.0.0", lifespan=lifespan)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=config.driver_app_origins,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+    allow_headers=["Authorization", "Content-Type"],
+)
 app.mount(
     "/static/shared/js",
     StaticFiles(directory=FRONTEND_DIR / "shared" / "js"),
@@ -18,24 +44,11 @@ app.mount(
 for asset_type in ("css", "js"):
     app.mount(
         f"/static/driver-app/{asset_type}",
-        StaticFiles(directory=FRONTEND_DIR / "driver-app" / asset_type),
+        StaticFiles(directory=DRIVER_APP_DIR / asset_type),
         name=f"driver-app-{asset_type}",
     )
 
-
-@app.get("/", include_in_schema=False)
-async def driver_app_page():
-    return FileResponse(FRONTEND_DIR / "driver-app" / "index.html")
-
+app.include_router(frontend_router)
 app.include_router(ingestion_router, prefix="/driver", tags=["Driver Ingestion"])
-
-@app.get("/health/live")
-async def health_live():
-    """Liveness probe confirming the process is running without checking dependencies."""
-    return {"status": "live"}
-
-@app.get("/health/ready")
-async def health_ready():
-    """Readiness probe checking Redis and MinIO connectivity (no Postgres access)."""
-    # TODO: Check Redis and MinIO storage connection health
-    return {"status": "ready"}
+app.include_router(driver_api_router, tags=["Driver API"])
+app.include_router(health_router)
